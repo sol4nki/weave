@@ -1,0 +1,56 @@
+.cardx {
+  background-color: #fafafa;
+  padding: 3rem;
+  transition: all 0.3s;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  text-align: left;
+}
+
+.cardx:hover {
+  background: #fff;
+  transform: translateY(-2px);
+}
+
+.cardx::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: #171717;
+  transition: width 0.3s;
+}
+
+.cardx:hover::before {
+  width: 100%;
+}
+
+
+.cardnum {
+    font-size: 0.75rem;
+    color: #a3a3a3;
+    margin-bottom: 1.5rem;
+    font-weight: 500;
+    transition: color 0.3s;
+}
+
+.cardx:hover .cardnum {
+    color: #171717;
+}
+
+.cardx h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+    color: #171717;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+}
+
+.cardx p {
+    color: #737373;
+    line-height: 1.6;
+    font-size: 0.9375rem;
+}

@@ -1,0 +1,71 @@
+.header {
+    position: fixed;
+    top: 0;
+    width: 100vw;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 4rem;
+    z-index: 1000;
+    background: #fafafa;
+    border-bottom: 1px solid #e5e5e5;
+    transition: padding 0.3s, background 0.3s;
+    gap: 20px;
+}
+
+.header.scrolled {
+    padding: 0.875rem 4rem;
+}
+
+.logo{
+    display: flex;
+    /* align-items: center; */
+    gap: 0.75rem;
+    font-weight: 600;
+    font-size: 1.25rem;
+    color: #171717;
+    text-decoration: none;
+
+}
+
+.logo h3{
+    font-weight: 550;
+}
+
+.header img{
+    height: 32px;
+    width: 32px;
+}
+.links {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.links {
+    display: flex;
+    gap: 2.5rem;
+    align-items: center;
+}
+
+.links a {
+    color: #737373;
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: color 0.2s;
+    font-weight: 400;
+    position: relative;
+}
+
+.links a:not(.btn):hover::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #171717;
+}
+
+.links a:hover {
+    color: #171717;
+}

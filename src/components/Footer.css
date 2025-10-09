@@ -1,0 +1,44 @@
+.footer {
+    padding: 2rem 3rem;
+    border-top: 1px solid #e5e5e5;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.footerlink {
+    display: flex;
+    gap: 2rem;
+}
+
+.footerlink a {
+    color: #a3a3a3;
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: color 0.2s;
+    position: relative;
+}
+
+.footerlink a:hover {
+    color: #171717;
+}
+
+.footerlink a::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 1px;
+    background: #171717;
+    transition: width 0.2s;
+}
+
+.footerlink a:hover::after {
+    width: 100%;
+}
+
+.compname {
+    color: #a3a3a3;
+    font-size: 0.875rem;
+}

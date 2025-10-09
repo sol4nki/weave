@@ -1,0 +1,29 @@
+.button{
+    background-color: #171717;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    color: #fafafa;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+    &:hover {
+        background-color: #404040;
+        /* background-color: darkred; */
+        transform: translateY(-2px);
+    }
+}
+
+.buttonwhite{
+    background-color: #fafafa;
+    border: 2px solid rgb(210, 210, 210);
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    color: #171717;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+    &:hover {
+        transform: translateY(-2px);
+    }
+}

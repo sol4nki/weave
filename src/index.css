@@ -1,0 +1,14 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    background: #fafafa;
+    color: #171717;
+    overflow-x: hidden;
+    /* line-height: 1.5; */
+    /* background-color: rebeccapurple; */
+}
