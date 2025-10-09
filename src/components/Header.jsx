@@ -35,7 +35,7 @@ export default function Header() {
                     {/* <a href="#home">Home</a> */}
                     <a href="#share">Home</a>
                     <a href="#share">Guide</a>
-                    <Buttonblack text="Share/Receive" onClick={() => alert('share/recieve clicked')} />
+                    <Buttonblack text="Try Demo" onClick={() => alert('share/recieve clicked')} />
                 </nav>
             </div>
         </>
