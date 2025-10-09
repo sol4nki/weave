@@ -42,3 +42,35 @@
     color: #a3a3a3;
     font-size: 0.875rem;
 }
+
+@media (max-width: 768px) {
+  .footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 2rem 1.5rem;
+  }
+
+  .footerlink {
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .compname {
+    font-size: 0.8125rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .footerlink a {
+    font-size: 0.8125rem;
+  }
+
+  .compname {
+    font-size: 0.75rem;
+  }
+
+  .footer {
+    padding: 1.5rem 1rem;
+  }
+}

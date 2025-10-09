@@ -69,3 +69,71 @@
 .links a:hover {
     color: #171717;
 }
+
+@media (max-width: 1024px) {
+  .header {
+    padding: 1rem 2rem;
+  }
+
+  .header.scrolled {
+    padding: 0.75rem 2rem;
+  }
+
+  .links {
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .header {
+    /* flex-direction: column; */
+    /* align-items: flex-start; */
+    padding: 1rem 1.5rem;
+  }
+
+  .header.scrolled {
+    padding: 0.75rem 1.5rem;
+  }
+
+
+  .links {
+    flex-wrap: wrap;
+    gap: 1rem;
+    /* padding-top: 0.5rem; */
+  }
+
+  .links a {
+    font-size: 0.8125rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 0.75rem 1rem;
+    
+  }
+
+  .header.scrolled {
+    padding: 0.5rem 1rem;
+  }
+
+  .logo {
+    font-size: 1rem;
+  }
+
+  .links {
+    /* flex-direction: column; */
+    /* align-items: flex-start; */
+    /* width: 100%; */
+    gap: 0.75rem;
+  }
+
+  .links a {
+    font-size: 0.75rem;
+  }
+
+  .header img {
+    height: 28px;
+    width: 28px;
+  }
+}

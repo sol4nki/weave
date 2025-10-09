@@ -1,9 +1,12 @@
 import { useEffect, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import './Header.css'
 import Buttonblack from './Button';
 
+
 export default function Header() {
     const headerRef = useRef(null);
+    const navigate = useNavigate();
 
     useEffect(() => {
         const handleScroll = () => {
@@ -33,9 +36,9 @@ export default function Header() {
                 </div>
                 <nav className="links">
                     {/* <a href="#home">Home</a> */}
-                    <a href="#share">Home</a>
-                    <a href="#share">Guide</a>
-                    <Buttonblack text="Try Demo" onClick={() => alert('share/recieve clicked')} />
+                    <Link to="/">Home</Link>
+                    <Link to="/guide">Guide</Link>
+                    <Buttonblack text="Try Demo" onClick={() => navigate('/demo')} />
                 </nav>
             </div>
         </>

@@ -54,3 +54,49 @@
     line-height: 1.6;
     font-size: 0.9375rem;
 }
+
+@media (max-width: 1024px) {
+  .cardx {
+    padding: 2.5rem;
+  }
+
+  .cardx h3 {
+    font-size: 1.125rem;
+  }
+
+  .cardx p {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .cardx {
+    padding: 2rem;
+  }
+
+  .cardnum {
+    font-size: 0.7rem;
+  }
+
+  .cardx h3 {
+    font-size: 1rem;
+  }
+
+  .cardx p {
+    font-size: 0.875rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .cardx {
+    padding: 1.5rem;
+  }
+
+  .cardx h3 {
+    font-size: 0.95rem;
+  }
+
+  .cardx p {
+    font-size: 0.8125rem;
+  }
+}

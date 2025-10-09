@@ -35,11 +35,11 @@ h6 {
 }
 
 .welcome {
-  min-height: 100vh;
+  max-height: 750px;
   /* padding: 0 4rem; */
   /* background-color: rebeccapurple; */
-  /* position: relative;
-  overflow: hidden; */
+  position: relative;
+  /* overflow: hidden; */
 }
 
 .welcomecont {
@@ -118,9 +118,9 @@ h1 {
 
 .scroll-indicator {
   position: absolute;
-  bottom: 2rem;
+  bottom: 3rem;
   left: 50%;
-  /* transform: translateX(-50%); */
+  transform: translateX(-50%);
   opacity: 0;
   animation: fadeInUp 0.8s forwards 0.8s, bounce 2s infinite 1.6s;
 }
@@ -200,16 +200,85 @@ p {
 }
 
 
+@media (min-width: 1600px) {
+  .welcomecont {
+    max-width: 960px;
+  }
 
-@media (max-width: 1024px) {
-  .cardcontainer {
-  grid-template-columns: repeat(2, 1fr);
+  h1 {
+    font-size: 5rem;
+  }
+
+  .sub {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 900px) {
+
+  h1 {
+    font-size: 3.5rem;
+  }
+
+  .sub {
+    font-size: 1.125rem;
   }
 }
 
 @media (max-width: 768px) {
 
-  .cardcontainer {
-  grid-template-columns: 1fr;
+  h1 {
+    font-size: 3rem;
   }
+
+  .sub {
+    font-size: 1rem;
+  }
+
+  .btns {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn-primary {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: 2.25rem;
+  }
+
+  .sub {
+    font-size: 0.95rem;
+  }
+
+
+  .scroll-indicator {
+    bottom: 1rem;
+  }
+}
+
+
+@media (max-width: 360px) {
+  h1 {
+    font-size: 1.75rem;
+  }
+
+  .sub {
+    font-size: 0.875rem;
+  }
+}
+
+@media (max-width: 1024px) { 
+  .cardcontainer { 
+    grid-template-columns: repeat(2, 1fr); 
+  } 
+} 
+@media (max-width: 768px) { 
+  .cardcontainer { 
+    grid-template-columns: 1fr; 
+  } 
 }

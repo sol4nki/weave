@@ -27,3 +27,31 @@
         transform: translateY(-2px);
     }
 }
+
+@media (max-width: 768px) {
+  .button,
+  .buttonwhite {
+    padding: 0.65rem 1.25rem;
+    font-size: 0.95rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .button,
+  .buttonwhite {
+    /* width: 100%; */
+    text-align: center;
+    font-size: 0.9rem;
+    padding: 0.6rem 1rem;
+  }
+}
+
+@media (max-width: 333px) {
+  .button,
+  .buttonwhite {
+    /* width: 100%; */
+    text-align: center;
+    font-size: 0.7rem;
+    padding: 0.4rem 0.8rem;
+  }
+}
