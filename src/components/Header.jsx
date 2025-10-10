@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import './Header.css'
 import Buttonblack from './Button';
-
+import weaveLogo from '../assets/weave-black.png';
 
 export default function Header() {
     const headerRef = useRef(null);
@@ -31,7 +31,7 @@ export default function Header() {
         <>
             <div className="header" ref={headerRef}>
                 <div className="logo">
-                    <img src="/weave-black.png" alt="Weave Logo" />
+                    <img src={weaveLogo} alt="Logo" />
                     <h3 className="title">weave</h3>
                 </div>
                 <nav className="links">

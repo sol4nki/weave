@@ -11,16 +11,16 @@ function Home() {
     <>
       <Header />
       <main>
-        <section class="welcome">
-            <div class="welcomecont">
+        <section className="welcome">
+            <div className="welcomecont">
                 <h1>Direct Data Sharing with P2P Technology</h1>
-                <p class="sub">Connect and share. Weave handles the complexity so you can share seamlessly.</p>
-                <div class="btns">
-                    <Link to="/demo" class="btn btn-primary">Get Started <span class="arrow">→</span></Link>
-                    <Buttonwhite text = "Documentation" />
+                <p className="sub">Connect and share. Weave handles the complexity so you can share seamlessly.</p>
+                <div className="btns">
+                    <Link to="/demo" className="btn btn-primary">Get Started <span className="arrow">→</span></Link>
+                    <Buttonwhite text = "Watch Video" />
                 </div>
             </div>
-            <div class="scroll-indicator">
+            <div className="scroll-indicator">
                 <span></span>
             </div>
         </section>
@@ -31,26 +31,22 @@ function Home() {
         <section>
           <h6>CORE FEATURES</h6>
           <div className="cardcontainer">
-            <Card />
-            <Card />
-            <Card />
-            <Card />
-            <Card />
-            <Card />
-            
+            <Card number='01' heading='Easy to use' description='idk bruh' />
+            <Card number='02' heading='Fast and Secure' description='idk bruh' />
+            <Card number='03' heading='Reliable' description='idk bruh' />
+            <Card number='04' heading='Direct Connection' description='idk bruh' />
+            <Card number='05' heading='Fully P2P' description='idk bruh' />
+            <Card number='06' heading='Encryption' description='idk bruh' />
             
           </div>
         </section>
         <section>
           <h6>TECH STACK</h6>
             
-            <p><strong>Frontend:</strong></p>
-            <p><strong>Backend:</strong></p>
-            <p><strong>Core Tech:</strong></p>
-            <p><strong>Goal:</strong></p>
-      
-            
-            
+            <p><strong>Frontend:</strong> React JS</p>
+            <p><strong>Backend:</strong> Python</p>
+            <p><strong>Core Tech:</strong> WebRTC</p>
+            <p><strong>Goal:</strong> Enable seamless P2P file sharing</p>
           
         </section>
       </main>
