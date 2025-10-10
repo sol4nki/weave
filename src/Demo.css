@@ -1,0 +1,58 @@
+.sectioncardK {
+  background: #fafafa;
+  border: 1px solid #e5e5e5;
+  padding: 2rem;
+  border-radius: 8px;
+  /* box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04); */
+  max-width: 720px;
+  transition: all 0.3s ease-in-out;
+}
+
+.sectiontitleK {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #171717;
+}
+
+.sectionsubK {
+  color: #737373;
+  font-size: 1rem;
+  margin-bottom: 2rem;
+}
+
+.sectionstepK {
+  margin-bottom: 2.5rem;
+}
+
+.sectionstepK h4 {
+  font-size: 1.125rem;
+  margin-bottom: 0.25rem;
+  color: #262626;
+}
+
+.sectionstepK:last-child {
+  margin-bottom: 0;
+}
+
+.sectiondescK {
+  font-size: 0.9rem;
+  color: #737373;
+  margin-bottom: 1rem;
+}
+
+.buttonsK {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+  .buttonsK {
+    flex-direction: column;
+  }
+
+  .sectioncardK {
+    padding: 1.5rem;
+  }
+}

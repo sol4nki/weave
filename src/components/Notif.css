@@ -1,0 +1,81 @@
+.notif-container {
+  position: fixed;
+  top: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  animation: slideIn 0.3s ease-out;
+  width: calc(100% - 2rem);
+  max-width: 480px;
+}
+
+.notif-content {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  color: #171717;
+  padding: 1rem 1.25rem 1rem 1.25rem;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  position: relative;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+}
+
+.notif-content p:first-child {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.notif-content p:last-child {
+  font-size: 0.875rem;
+  color: #525252;
+  line-height: 1.5;
+}
+
+.notif-content button {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  background: none;
+  border: none;
+  font-size: 1rem;
+  color: #737373;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.notif-content button:hover {
+  color: #171717;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) translateX(-50%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(-50%);
+  }
+}
+
+@media (max-width: 480px) {
+  .notif-container {
+    top: 1rem;
+    width: calc(100% - 1.5rem);
+    max-width: none;
+  }
+
+  .notif-content {
+    padding: 0.875rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .notif-content p:first-child {
+    font-size: 0.95rem;
+  }
+
+  .notif-content p:last-child {
+    font-size: 0.8125rem;
+  }
+}

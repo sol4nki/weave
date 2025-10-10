@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import './Home.css'
 import Card from './components/Card'
-import Header from './components/Header'
+// import Header from './components/Header'
 import Button, { Buttonwhite } from './components/Button'
 import Footer from './components/Footer'
 import { Link } from 'react-router-dom'
+import Notif from './components/Notif'
 
 function Home() {
   return (
     <>
-      <Header />
+      {/* <Header /> */}
       <main>
+        <Notif/>
         <section className="welcome">
             <div className="welcomecont">
                 <h1>Direct Data Sharing with P2P Technology</h1>
@@ -36,7 +38,7 @@ function Home() {
             <Card number='03' heading='Reliable' description='idk bruh' />
             <Card number='04' heading='Direct Connection' description='idk bruh' />
             <Card number='05' heading='Fully P2P' description='idk bruh' />
-            <Card number='06' heading='Encryption' description='idk bruh' />
+            <Card number='06' heading='Lossless Transmission' description='idk bruh' />
             
           </div>
         </section>
