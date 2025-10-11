@@ -287,7 +287,11 @@ class weaveSender {
   constructor(log) {
     this.log = log;
     this.usertype = "sender"
-    this.lc = new RTCPeerConnection()
+    this.lc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" }
+      ]
+    });
     this.dc = this.lc.createDataChannel("channel")
     this.dc.onmessage = e => this.log("Recieved: " + e.data)
     this.dc.onopen = e => this.log("Sender: connection open " + e.data)
@@ -341,7 +345,11 @@ class weaveReceiver {
   constructor(log) {
     this.log = log;
     this.usertype = "receiver";
-    this.rc = new RTCPeerConnection();
+    this.rc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" }
+      ]
+    });
 
     this.rc.onicecandidate = () => this.log("new icecandidate" + JSON.stringify(this.rc.localDescription));
     this.rc.ondatachannel = e => {
