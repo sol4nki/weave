@@ -10,6 +10,8 @@ function Demo() {
   const [connectionstate, setconnectionstate] = useState("disconnected");
   const [usertype, setusertype] = useState(null);
   const [step, setstep] = useState(0);
+  const [senderOffer, setSenderOffer] = useState(null); // zaruri hai stoprage ke for global scope
+  const log = (msg) => console.log(msg);
 
   const senderSection = (
     <div className="sectioncardK">
@@ -21,8 +23,13 @@ function Demo() {
         <h4>Create Connection (Step: I)</h4>
         <p className="sectiondescK">Share this with the receiver! (this is a big chunk of text)</p>
         <div className="buttonsK">
-          
-          {step === 0 ? <Button text="Copy Connection Link" onClick={() => setstep(1)} /> : <Buttonwhite text="Copied Successfully!"  />}
+
+          {step === 0 ? <Button text="Copy Connection Link" onClick={async () => {
+            const sender = new weaveSender(log);
+            const desc = await sender.create();
+            await handlecopy(desc);
+            setstep(1);
+          }} /> : <Buttonwhite text="Copied Successfully!" onClick={() => {setstep(1); handlecopy(new weaveSender(log).create());}} />}
           {/* {step === 1 ? <Button text="Paste Peer Link" onClick={() => setstep(2)} /> : <Buttonwhite text="Paste Peer Link"  />} */}
         </div>
       </div>
@@ -49,7 +56,12 @@ function Demo() {
         <h4>Connect to Peer (Step: II)</h4>
         <p className="sectiondescK">Paste the chunk of text sent by the sender (just click the button)</p>
         <div className="buttonsK">
-          {step===0 ? <Button text="Paste Chunk" onClick={() => setstep(1)} /> : <Buttonwhite text="Pasted Sucessfully!" />}
+          {step===0 ? <Button text="Paste Chunk" onClick={
+            async () => {setstep(1);
+            // const localdesc = new weaveSender(log).create();
+            const senderoffer = await handlepaste();
+            setSenderOffer(senderoffer);
+          }} /> : <Buttonwhite text="Pasted Sucessfully!" />}
         </div>
       </div>
 
@@ -57,8 +69,19 @@ function Demo() {
         <h4>Copy connection Chunk (Step: III)</h4>
         <p className="sectiondescK">Share this with the sender (this is a big chunk of text)</p>
         <div className="buttonsK">
-          {usertype === "sender" ? (step === 1 ? <Button text="Click to paste" onClick={() => setstep(2)} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
-          {usertype === "receiver" ? (step === 1 ? <Button text="Click to copy" onClick={() => setstep(2)} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
+          {usertype === "sender" ? (step === 1 ? <Button text="Click to paste" onClick={async () => {setstep(2); await handlepaste();}} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
+          {usertype === "receiver" ? (step === 1 ? <Button text="Click to copy" onClick={async () => 
+            {
+              setstep(2);
+              if (senderOffer){
+                // console.log("Received offer from clipboard:", senderOffer);
+                const reply = await new weaveReceiver(log).offerbysender(JSON.parse(senderOffer));
+                await handlecopy(JSON.stringify(reply));
+                setconnectionstate("connected");
+              }
+
+            }} 
+            /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
         </div>
       </div>
     </div>
@@ -118,36 +141,50 @@ function Demo() {
 
 class weaveSender {
   constructor(log) {
-    this.usertype = usertype
+    this.log = log;
+    this.usertype = "sender"
     this.lc = new RTCPeerConnection()
     this.dc = this.lc.createDataChannel("channel")
-    this.dc.onmessage = e => log("Recieved: " + e.data)
-    this.dc.onopen = e => log("Sender: connection open " + e.data)
-    this.lc.onicecandidate = () => log("new icecandidate" + JSON.stringify(this.lc.localDescription))
-    this.lc.createOffer().then(o => this.lc.setLocalDescription(o)).then(() => log("set sucessful"))
+    this.dc.onmessage = e => this.log("Recieved: " + e.data)
+    this.dc.onopen = e => this.log("Sender: connection open " + e.data)
     // log(this.lc.localDescription)
   }
+  async create() {
+    this.lc.onicecandidate = () => 
+      this.log("new icecandidate: " + JSON.stringify(this.lc.localDescription));
+
+    const offer = await this.lc.createOffer();
+    await this.lc.setLocalDescription(offer);
+
+    this.log("set successful");
+
+    return JSON.stringify(this.lc.localDescription);
+  }
+
+
   senddata(data){
     this.dc.send(data)
+    return "sent: " + data
   }
   answerofreceiver(answer=null) {
     if (answer){
       this.lc.setRemoteDescription(answer)
-      console.log("new connection created finalized")
+      this.log("new connection created finalized")
     }
   }
 }
 
 class weaveReceiver {
   constructor(log) {
+    this.log = log;
     this.usertype = "receiver";
     this.rc = new RTCPeerConnection();
 
-    this.rc.onicecandidate = () => log("new icecandidate" + JSON.stringify(this.rc.localDescription));
+    this.rc.onicecandidate = () => this.log("new icecandidate" + JSON.stringify(this.rc.localDescription));
     this.rc.ondatachannel = e => {
       this.rc.dc = e.channel
-      this.rc.dc.onmessage = e => log("Recieved: " + e.data)
-      this.rc.dc.onopen = e => log("Receiver: connection open!")
+      this.rc.dc.onmessage = e => this.log("Recieved: " + e.data)
+      this.rc.dc.onopen = e => this.log("Receiver: connection open!")
     }
 
     // console.log(this.rc.localDescription) 
@@ -155,18 +192,42 @@ class weaveReceiver {
   
   senddata(data){
     this.rc.dc.send(data)
+    return "sent: " + data
   }
 
-  offerbysender(offer=null) {
+  async offerbysender(offer=null) {
     if (offer){
         this.rc
           .setRemoteDescription(offer)
           .then(() => this.rc.createAnswer())
           .then((a) => this.rc.setLocalDescription(a))
-          .then(() => log("Receiver: answer created and set"));
-
+          .then(() => this.log("Receiver: answer created and set"));
+        return this.rc.localDescription
       // console.log("new connection created finalized")
     }
+  }
+}
+
+const handlepaste = async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    console.log("Pasted text:", text);
+    return text;
+  } catch (err) {
+    console.error("Failed to read clipboard contents:", err);
+    alert("Clipboard access failed. Make sure the website has permission to access clipboard.");
+    return null;
+  }
+};
+
+const handlecopy = async (text) => {
+  console.log("copying...")
+  try {
+    await navigator.clipboard.writeText(text);
+    console.log('Text copied to clipboard');
+  } catch (err) {
+    console.error('Failed to copy text: ', err);
+    alert("Clipboard access failed. Make sure the website has permission to access clipboard.");
   }
 }
 
