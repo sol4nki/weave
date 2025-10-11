@@ -12,10 +12,10 @@ function Demo() {
   const [step, setstep] = useState(0);
   const [senderOffer, setSenderOffer] = useState(null); // zaruri hai stoprage ke for global scope
   const log = (msg) => console.log(msg);
+  const [weaveclass, setweaveclass] = useState(null);
 
   const senderSection = (
     <div className="sectioncardK">
-      
       <h2 className="sectiontitleK">You are now the Sender</h2>
       <p className="sectionsubK">Follow the steps below to initiate the connection:</p>
 
@@ -24,12 +24,11 @@ function Demo() {
         <p className="sectiondescK">Share this with the receiver! (this is a big chunk of text)</p>
         <div className="buttonsK">
 
-          {step === 0 ? <Button text="Copy Connection Link" onClick={async () => {
-            const sender = new weaveSender(log);
-            const desc = await sender.create();
+          {step === 0 ? <Button text="Copy Connection Chunk" onClick={async () => {
+            const desc = await weaveclass.create();
             await handlecopy(desc);
             setstep(1);
-          }} /> : <Buttonwhite text="Copied Successfully!" onClick={() => {setstep(1); handlecopy(new weaveSender(log).create());}} />}
+          }} /> : <Buttonwhite text="Copied Successfully!" onClick={() => {setstep(1); handlecopy(weaveclass.create());}} />}
           {/* {step === 1 ? <Button text="Paste Peer Link" onClick={() => setstep(2)} /> : <Buttonwhite text="Paste Peer Link"  />} */}
         </div>
       </div>
@@ -38,7 +37,14 @@ function Demo() {
         <h4>Paste Receiver's Chunk (Step: IV)</h4>
         <p className="sectiondescK">Paste the chunk of text sent by the sender (just click the button)</p>
         <div className="buttonsK">
-          {usertype === "sender" ? (step === 1 ? <Button text="Click to paste" onClick={() => setstep(2)} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
+          {usertype === "sender" ? (step === 1 ? <Button text="Click to paste" onClick={async () => {
+            
+            setstep(2); 
+            const data = await handlepaste();
+            weaveclass.answerofreceiver(data);
+            setconnectionstate("connected");
+
+            }} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
           {usertype === "receiver" ? (step === 1 ? <Button text="Click to copy" onClick={() => setstep(2)} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
         </div>
       </div>
@@ -46,10 +52,9 @@ function Demo() {
   );
   
 
-    const receiverSection = (
+  const receiverSection = (
     
     <div className="sectioncardK">
-      
       <h2 className="sectiontitleK">You are now the Receiver</h2>
       <p className="sectionsubK">Follow the steps below to finish the connection:</p>
       <div className="sectionstepK">
@@ -74,10 +79,11 @@ function Demo() {
             {
               setstep(2);
               if (senderOffer){
-                // console.log("Received offer from clipboard:", senderOffer);
-                const reply = await new weaveReceiver(log).offerbysender(JSON.parse(senderOffer));
-                await handlecopy(JSON.stringify(reply));
+                console.log("Received offer from clipboard:", senderOffer);
+                const reply = await weaveclass.offerbysender(JSON.parse(senderOffer));
                 setconnectionstate("connected");
+                await handlecopy(JSON.stringify(reply));
+
               }
 
             }} 
@@ -88,6 +94,7 @@ function Demo() {
   );
   const filesection = (
     <>
+      <input type="text" onInput={(e) => weaveclass.senddata("hello from " + e.target.value)} />
       <Card />
     </>
 
@@ -115,8 +122,8 @@ function Demo() {
           <h6>establish conneciton</h6>
           <p className='welcomecont'>Receiving or Sending Files?</p>
           <span style={{display: 'flex', gap: '10px', flexDirection: 'row'}}>
-            { usertype === "sender" ? <Button text = "Sending" onClick={() => {setusertype("sender"); setstep(0);}}/> : <Buttonwhite text = "Sending" onClick={() => {setusertype("sender"); setstep(0);}}/> }
-            { usertype === "receiver" ? <Button text = "Receiving" onClick={() => {setusertype("receiver"); setstep(0);}}/> : <Buttonwhite text = "Receiving" onClick={() => {setusertype("receiver"); setstep(0);}}/> }
+            { usertype === "sender" ? <Button text = "Sending" onClick={() => {setusertype("sender"); setstep(0); setweaveclass(new weaveSender(log))}}/> : <Buttonwhite text = "Sending" onClick={() => {setusertype("sender"); setstep(0); setweaveclass(new weaveSender(log))}}/> }
+            { usertype === "receiver" ? <Button text = "Receiving" onClick={() => {setusertype("receiver"); setstep(0); setweaveclass(new weaveReceiver(log))}}/> : <Buttonwhite text = "Receiving" onClick={() => {setusertype("receiver"); setstep(0); setweaveclass(new weaveReceiver(log))}}/> }
 
           </span>
           <br/>
@@ -162,14 +169,19 @@ class weaveSender {
   }
 
 
-  senddata(data){
-    this.dc.send(data)
-    return "sent: " + data
+  senddata(data) {
+    if (this.lc.dc && this.lc.dc.readyState === "open") {
+      this.lc.dc.send(data);
+      this.log("sent: " + data);
+    } else {
+      this.log("DataChannel not open yet!");
+    }
   }
   answerofreceiver(answer=null) {
     if (answer){
-      this.lc.setRemoteDescription(answer)
+      this.lc.setRemoteDescription(JSON.parse(answer))
       this.log("new connection created finalized")
+
     }
   }
 }
@@ -190,20 +202,22 @@ class weaveReceiver {
     // console.log(this.rc.localDescription) 
   }
   
-  senddata(data){
-    this.rc.dc.send(data)
-    return "sent: " + data
+  senddata(data) {
+    if (this.rc.dc && this.rc.dc.readyState === "open") {
+      this.rc.dc.send(data);
+      this.log("sent: " + data);
+    } else {
+      this.log("DataChannel not open yet!");
+    }
   }
 
-  async offerbysender(offer=null) {
-    if (offer){
-        this.rc
-          .setRemoteDescription(offer)
-          .then(() => this.rc.createAnswer())
-          .then((a) => this.rc.setLocalDescription(a))
-          .then(() => this.log("Receiver: answer created and set"));
-        return this.rc.localDescription
-      // console.log("new connection created finalized")
+  async offerbysender(offer = null) {
+    if (offer) {
+      await this.rc.setRemoteDescription(offer);
+      const answer = await this.rc.createAnswer();
+      await this.rc.setLocalDescription(answer);
+      this.log("Receiver: answer created and set");
+      return this.rc.localDescription; // fixed the coppying wala part cause i m dumb
     }
   }
 }
@@ -224,7 +238,7 @@ const handlecopy = async (text) => {
   console.log("copying...")
   try {
     await navigator.clipboard.writeText(text);
-    console.log('Text copied to clipboard');
+    console.log('Text copied to clipboard: ' + text);
   } catch (err) {
     console.error('Failed to copy text: ', err);
     alert("Clipboard access failed. Make sure the website has permission to access clipboard.");
