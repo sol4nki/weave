@@ -214,40 +214,8 @@ function Demo() {
     <div className="sectioncardK">
       <h2 className="sectiontitleK">Upload Files</h2>
       <p className="sectionsubK">Select files to upload and send them to the connected peer.</p>
-      <input
-        type="file"
-        multiple
-        onChange={async (e) => {
-          const files = e.target.files;
-          if (!files.length) return;
+      {/* input bugging ill add it later */}
 
-          // Example: Log file names and sizes
-          for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            console.log(`File selected: ${file.name} (${file.size} bytes)`);
-
-            // Example: Read file as ArrayBuffer or text (modify as needed)
-            const arrayBuffer = await file.arrayBuffer();
-
-            // Example: Send file data as Uint8Array or base64 string, etc.
-            if (weaveclass && connectionstate === "connected") {
-              // Sending file data chunk (you may want to chunk large files)
-              // Here sending as base64 string for demo, adapt as needed
-              const base64 = btoa(
-                new Uint8Array(arrayBuffer)
-                  .reduce((data, byte) => data + String.fromCharCode(byte), '')
-              );
-              weaveclass.senddata(`file:${file.name}:${base64}`);
-              console.log(`Sent file: ${file.name}`);
-            } else {
-              console.log("Not connected or weaveclass undefined");
-            }
-          }
-
-          // Optionally clear the input to allow re-uploading same files later
-          e.target.value = "";
-        }}
-      />
     </div>
   );
 
@@ -276,8 +244,9 @@ function Demo() {
           <h6>establish conneciton</h6>
           <p className='welcomecont'>Receiving or Sending Files?</p>
           <span style={{display: 'flex', gap: '10px', flexDirection: 'row'}}>
-            { usertype === "sender" ? <Button text = "Sending" onClick={() => {setusertype("sender"); setstep(0); setweaveclass(new weaveSender(log))}}/> : <Buttonwhite text = "Sending" onClick={() => {setusertype("sender"); setstep(0); setweaveclass(new weaveSender(log))}}/> }
-            { usertype === "receiver" ? <Button text = "Receiving" onClick={() => {setusertype("receiver"); setstep(0); setweaveclass(new weaveReceiver(log))}}/> : <Buttonwhite text = "Receiving" onClick={() => {setusertype("receiver"); setstep(0); setweaveclass(new weaveReceiver(log))}}/> }
+            { usertype === null ? <> <Buttonwhite text = "Sending" onClick={() => {setusertype("sender"); setstep(0); setweaveclass(new weaveSender(log))}}/> <Buttonwhite text = "Receiving" onClick={() => {setusertype("receiver"); setstep(0); setweaveclass(new weaveReceiver(log))}}/> </> : null }
+            { usertype === "sender" ? <Button text = "Sending" onClick={() => {setusertype("sender"); setstep(0); setweaveclass(new weaveSender(log))}}/> : null }
+            { usertype === "receiver" ? <Button text = "Receiving" onClick={() => {setusertype("receiver"); setstep(0); setweaveclass(new weaveReceiver(log))}}/> : null }
 
           </span>
           <br/>
@@ -289,7 +258,7 @@ function Demo() {
         </section>
         <section>
           <h6>UPLOAD FILES</h6>    
-          <p className='welcomecont'>Upload files, scrolldown for sending msgs section/debug section</p>      
+          <p className='welcomecont'>Scrolldown for sending msgs section/debug section</p>      
 
           { connectionstate === "connected" ? filesection : completeconnectionfirst }
       
