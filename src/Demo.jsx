@@ -31,7 +31,7 @@ function Demo() {
 
   // file wala part yahan daal raha hu  filesxyz filexyz files (for easy search)
 
-  const [sentFiles, setSentFiles] = useState([]);
+  const [sendFiles, setSendFiles] = useState([]);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -73,7 +73,7 @@ function Demo() {
         });
       }
 
-      setSentFiles(prev => [...prev, ...fileArray]);
+      setSendFiles(prev => [...prev, ...fileArray]);
     }
   }
 
@@ -318,49 +318,21 @@ function Demo() {
         <div className="dropZoneContent">
           <p>Drag and Drop or Click to upload</p>
         </div>
-      </label>      
-      {/* input bugging ill add it later */}
-      {/* <input
-        type="file"
-        multiple
-        onChange={async (e) => {
-          const files = e.target.files;
-          if (!files.length) return;
+      </label>
 
-          for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            log(`File selected: ${file.name} (${file.size} bytes)`);
-
-            const arrayBuffer = await file.arrayBuffer();
-
-            if (weaveclass && connectionstate === "connected") {
-              const base64 = btoa(
-                new Uint8Array(arrayBuffer)
-                  .reduce((data, byte) => data + String.fromCharCode(byte), '')
-              );
-              weaveclass.senddata(`file:${file.name}:${base64}`);
-              log(`Sent file: ${file.name}`);
-            } else {
-              log("Not connected or weaveclass undefined");
-            }
-          }
-
-          e.target.value = "";
-        }}
-      /> */}
       <p style={{fontWeight: 'bold', minWidth: '100px'}}>Sending :</p>
       <div className="filebufferarray" id="sendingfiles">
         
-        {sentFiles.length > 0 ? (
-            sentFiles.map((file, index) => (
+        {sendFiles.length > 0 ? (
+            sendFiles.map((file, index) => (
               <Filecard key={file.key} name={file.name} num={index+1} type={file.type} size={file.size}/>
             ))
           ) : (
             <p>No files uploaded yet.</p>
           )}
         <button style={{marginTop: '10px'}} onClick={() => {
-          if (sentFiles.length > 0){
-            for (let file of sentFiles) {
+          if (sendFiles.length > 0){
+            for (let file of sendFiles) {
               weaveclass.sendFile(file);
               log(`Initiated sending for file: ${file.name}`);
             }
@@ -430,7 +402,7 @@ function Demo() {
           <p className='welcomecont'>Scrolldown for sending msgs section/debug section</p>      
 
           { connectionstate === "connected" ? filesection : completeconnectionfirst }
-          {filesection}
+          {/* {filesection} */}
         </section>
 
         <section>
