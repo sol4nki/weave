@@ -367,12 +367,14 @@ class weaveReceiver {
       await this.rc.setRemoteDescription(offer);
       const answer = await this.rc.createAnswer();
       await this.rc.setLocalDescription(answer);
-      
+      // this.log("Full answer SDP:", answer);
+
       return new Promise((resolve) => {
         this.rc.onicecandidate = e => {
           if (e.candidate === null) {
             this.log("Receiver: answer ready");
-            resolve(this.rc.localDescription); // kuch kaanm nhi kar raha yaar FFF
+            resolve(this.rc.localDescription);
+            this.log(JSON.stringify(this.rc.localDescription)); // kuch kaanm nhi kar raha yaar FFF
           }
         };
       });
@@ -380,10 +382,11 @@ class weaveReceiver {
   }
 }
 
+
 const handlepaste = async () => {
   try {
     const text = await navigator.clipboard.readText();
-    console.log("Pasted text:", text);
+    console.log("Pasted text: ", text);
     return text;
   } catch (err) {
     console.error("Failed to read clipboard contents:", err);
