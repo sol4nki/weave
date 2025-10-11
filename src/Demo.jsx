@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import React, { useRef, useEffect, useState } from 'react';
+
 // import './App.css'
 import Card from './components/Card'
 import Filecard from './components/Filecard'
@@ -23,11 +24,62 @@ function Demo() {
   };
   const [weaveclass, setweaveclass] = useState(null);
   const [notif, setNotif] = useState(null);
-
-
-
+  
 
   const [messageToSend, setMessageToSend] = useState("");
+
+
+  // file wala part yahan daal raha hu  filesxyz filexyz files (for easy search)
+
+  const [sentFiles, setSentFiles] = useState([]);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    const fileInput = fileInputRef.current;
+    if (fileInput) {
+      fileInput.addEventListener('change', handleFiles);
+      
+    }
+
+    // cleanup to avoid memory leaks
+    return () => {
+      
+      if (fileInput) {
+        
+        fileInput.removeEventListener('change', handleFiles);
+      }
+    };
+  }, []);
+  
+
+  function handleFiles(event) {
+    console.log("5")
+    const files = event.target.files;
+    console.log(files)
+    if (files.length > 0) {
+      const fileArray = [];
+      for (let i = 0; i < files.length; i++) {
+
+        console.log('File Name:', files[i].name);
+        console.log('File Size:', files[i].size, 'bytes');
+        console.log('File Type:', files[i].type);
+
+        fileArray.push({
+          file: files[i],
+          name: files[i].name,
+          size: files[i].size,
+          type: 'sending',
+          key: Date.now() + i, // HAHAHA HAHAHA HAHAHA
+        });
+      }
+
+      setSentFiles(prev => [...prev, ...fileArray]);
+    }
+  }
+
+
+
+
 
   const sendSection = (
     <div className="sectioncardK">
@@ -121,10 +173,9 @@ function Demo() {
               const data = await handlepaste();
               
               if (!data) {
-
                 setNotif(null);
                 setTimeout(() => {
-                setNotif({ title: "Clipboard empty", body: "clipboard empty make sure the entire chunk is copied." });
+                  setNotif({ title: "Clipboard empty", body: "clipboard empty make sure the entire chunk is copied." });
                 }, 100);
                 return;
               }
@@ -140,13 +191,21 @@ function Demo() {
 
               } else if (result === 1) {
                 // alert("Pasted successfully! Wait a few seconds for connection to finalize");
+                console.log("here 1: " + step)
+                
+                console.log("here 2: " + step)
                 setstep(2);
                 setNotif(null);
+                setstep(2);
                 setconnectionstate("connected");
+                setstep(2);
                 setNotif(null);
                 setTimeout(() => {
                   setNotif({ title: "Pasted successfully!", body: "Wait a few seconds for connection to finalize." });
+                  setstep(2); // this works somehow i m too sleepy
                 }, 100);
+                setstep(2);
+                setstep(2); // i fucking dont get it fuck it
                 return;
                 
               } else if (result === -1) {
@@ -158,7 +217,7 @@ function Demo() {
 
                 
               }
-            }} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
+            }} /> : (step === 2 ? <Buttonwhite text="Pasted Successfully!" /> : <Buttonwhite text="Complete Previous Step!" />)) : null}
           {usertype === "receiver" ? (step === 1 ? <Button text="Click to copy" onClick={() => setstep(2)} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
         </div>
       </div>
@@ -253,6 +312,8 @@ function Demo() {
           type="file"
           multiple
           className="hiddenInput"
+          id = "fileInput"
+          ref={fileInputRef}
         />
         <div className="dropZoneContent">
           <p>Drag and Drop or Click to upload</p>
@@ -290,27 +351,27 @@ function Demo() {
       <p style={{fontWeight: 'bold', minWidth: '100px'}}>Sending :</p>
       <div className="filebufferarray" id="sendingfiles">
         
-        <Filecard name="file1.txt" num="1" type="upload"/>
-        <Filecard name="file1.txt" num="0" type="done" />
-        <Filecard name="file2.txt" num="0" type="done" />
-        <Filecard name="file1.txt" num="0" type="done" />
-        <Filecard name="file2.txt" num="0" type="done" />
-        <Filecard name="file1.txt" num="0" type="done" />
-        <Filecard name="file2.txt" num="0" type="done" />
-        <Filecard name="file1.txt" num="0" type="done" />
-        <Filecard name="file2.txt" num="0" type="done" />
-
+        {sentFiles.length > 0 ? (
+            sentFiles.map((file, index) => (
+              <Filecard key={file.key} name={file.name} num={index+1} type={file.type} size={file.size}/>
+            ))
+          ) : (
+            <p>No files uploaded yet.</p>
+          )}
+        <button style={{marginTop: '10px'}} onClick={() => {
+          if (sentFiles.length > 0){
+            for (let file of sentFiles) {
+              weaveclass.sendFile(file);
+              log(`Initiated sending for file: ${file.name}`);
+            }
+        }
+        }}> Send Files </button>
         
       </div>
       <br/>
       <p style={{fontWeight: 'bold', minWidth: '100px'}}>Sent : </p>
       <div className="filebufferarray" id="sentfiles">
-        <Filecard name="file1.txt" num="0" type="done" />
-        <Filecard name="file2.txt" num="0" type="done" />
-        <Filecard name="file1.txt" num="0" type="done" />
-        <Filecard name="file2.txt" num="0" type="done" />
-        <Filecard name="file1.txt" num="0" type="done" />
-        <Filecard name="file2.txt" num="0" type="done" />
+        {/* <Filecard name="file1.txt" num="0" type="done" /> */}
       </div>
 
     </div>
@@ -321,11 +382,7 @@ function Demo() {
       <p style={{fontWeight: 'bold', minWidth: '100px'}}>Received : </p>
       <div className="filebufferarray" id="sentfiles">
         <Filecard name="file1.txt" num="0" type="done" />
-        <Filecard name="file2.txt" num="0" type="done" />
-        <Filecard name="file1.txt" num="0" type="done" />
-        <Filecard name="file2.txt" num="0" type="done" />
-        <Filecard name="file1.txt" num="0" type="done" />
-        <Filecard name="file2.txt" num="0" type="done" />
+        
       </div>
     </div>
     </>
@@ -416,6 +473,44 @@ class weaveSender {
     this.dc = this.lc.createDataChannel("channel")
     this.dc.onmessage = e => this.log("Recieved: " + e.data)
     this.dc.onopen = e => this.log("Sender: connection open " + e.data)
+    this.incomingFile = null;
+    this.receivedBuffers = [];
+    this.lc.ondatachannel = e => {
+      this.dc = e.channel;
+
+      this.dc.onmessage = event => {
+        if (typeof event.data === "string") {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "file-meta") {
+              this.incomingFile = { name: msg.name, size: msg.size, mime: msg.mime };
+              this.receivedBuffers = [];
+              this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
+            } else if (msg.type === "file-end") {
+              const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = this.incomingFile.name;
+              a.textContent = `Download ${this.incomingFile.name}`;
+              document.getElementById("dbugconsole").appendChild(a);
+              this.log(`File received: ${this.incomingFile.name}`);
+              this.receivedBuffers = [];
+              this.incomingFile = null;
+            } else {
+              this.log("Received: " + event.data);
+            }
+          } catch {
+            this.log("Received message: " + event.data);
+          }
+        } else {
+          // Binary chunk
+          this.receivedBuffers.push(event.data);
+        }
+      };
+
+      this.dc.onopen = () => this.log("Receiver: connection open!");
+    };
     // log(this.lc.localDescription)
   }
   
@@ -457,10 +552,45 @@ class weaveSender {
       }
       await this.lc.setRemoteDescription(JSON.parse(answer))
       this.log("new connection created finalized")
+
       return 1
-      } return -1
-    } 
+      } 
+      return -1
+  } 
+
+  sendFile(file) {
+    const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
+    const reader = new FileReader();
+    const dc = this.dc;
+    const log = this.log;
+
+    reader.onload = async (event) => {
+      const buffer = event.target.result;
+      log(`Sending file: ${file.name} (${buffer.byteLength} bytes)`);
+
+      dc.send(JSON.stringify({
+        type: "file-meta",
+        name: file.name,
+        size: buffer.byteLength,
+        mime: file.type || "application/octet-stream"
+      }));
+
+      for (let offset = 0; offset < buffer.byteLength; offset += chunkSize) {
+        const chunk = buffer.slice(offset, offset + chunkSize);
+        dc.send(chunk);
+        await new Promise(r => setTimeout(r, 10)); 
+      }
+
+      dc.send(JSON.stringify({ type: "file-end", name: file.name }));
+      log(`File sent successfully: ${file.name}`);
+    };
+
+    reader.readAsArrayBuffer(file.file);
   }
+
+
+}
+
 
 class weaveReceiver {
   constructor(log) {
@@ -487,7 +617,46 @@ class weaveReceiver {
       this.rc.dc.onmessage = e => this.log("Recieved: " + e.data)
       this.rc.dc.onopen = e => this.log("Receiver: connection open!")
     }
+    this.incomingFile = null;
+    this.receivedBuffers = [];
 
+    // receive wala logic (function ki zarurat nhi cause obviously open data channel pe aa raha hai toh process hojayega khud hi)
+    this.rc.ondatachannel = e => {
+      this.rc.dc = e.channel;
+
+      this.rc.dc.onmessage = event => {
+        if (typeof event.data === "string") {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "file-meta") {
+              this.incomingFile = { name: msg.name, size: msg.size, mime: msg.mime };
+              this.receivedBuffers = [];
+              this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
+            } else if (msg.type === "file-end") {
+              const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = this.incomingFile.name;
+              a.textContent = `Download ${this.incomingFile.name}`;
+              document.getElementById("dbugconsole").appendChild(a);
+              this.log(`File received: ${this.incomingFile.name}`);
+              this.receivedBuffers = [];
+              this.incomingFile = null;
+            } else {
+              this.log("Received: " + event.data);
+            }
+          } catch {
+            this.log("Received message: " + event.data);
+          }
+        } else {
+          // Binary chunk
+          this.receivedBuffers.push(event.data);
+        }
+      };
+
+      this.rc.dc.onopen = () => this.log("Receiver: connection open!");
+    };
     // console.log(this.rc.localDescription) 
   }
   
@@ -518,6 +687,39 @@ class weaveReceiver {
       });
     }
   }
+  // wahi open data channel wali baat wapis L
+  sendFile(file) {
+    const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
+    const reader = new FileReader();
+    const dc = this.dc;
+    const log = this.log;
+
+    reader.onload = async (event) => {
+      const buffer = event.target.result;
+      log(`Sending file: ${file.name} (${buffer.byteLength} bytes)`);
+
+      dc.send(JSON.stringify({
+        type: "file-meta",
+        name: file.name,
+        size: buffer.byteLength,
+        mime: file.type || "application/octet-stream"
+      }));
+
+      for (let offset = 0; offset < buffer.byteLength; offset += chunkSize) {
+        const chunk = buffer.slice(offset, offset + chunkSize);
+        dc.send(chunk);
+        await new Promise(r => setTimeout(r, 10)); 
+      }
+
+      dc.send(JSON.stringify({ type: "file-end", name: file.name }));
+      log(`File sent successfully: ${file.name}`);
+    };
+
+    reader.readAsArrayBuffer(file.file);
+  }
+
+
+
 }
 
 
@@ -546,4 +748,27 @@ const handlecopy = async (text) => {
   }
 }
 
+
+
+
+
+
+
+
+
+
+// this is very bad code, i should do better
+// 1. everything is just dumped into one file
+// 2. proper state management hai hi nhi
+// 3. structure nhi hai kuch bhi i made classes but still doesnt feel right
+// 4. error handling ke naam pe notifs hi hai bss F (ux wise bhi not the best)
+// 5. scalable nhi hai bilkul bhi but if this project does well ill fix them and recode the entire logic 
+// cause rn i know kya struct follow karna hai after trial and error for hours so it can be done better
+// 7. koi useful comment nhi hai ismein yaar F baadmein padhne mein dikkat hogi but function names dhang se hai
+// 8. ui is alright tho hahahaha :P
+
 export default Demo
+
+
+
+
