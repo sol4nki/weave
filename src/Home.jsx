@@ -12,7 +12,7 @@ function Home() {
     <>
       {/* <Header /> */}
       <main>
-        <Notif/>
+        <Notif title="Welcome to Weave!" body="Seamlessly share files with peers, checkout the guide to learn how to use it" duration={4000}/>
         <section className="welcome">
             <div className="welcomecont">
                 <h1>Direct Data Sharing with P2P Technology</h1>
@@ -43,15 +43,15 @@ function Home() {
             
           </div>
         </section>
-        <section>
+        {/* <section>
           <h6>TECH STACK</h6>
             
             <p><strong>Frontend:</strong> React JS</p>
-            <p><strong>Backend:</strong> Python</p>
+            <p><strong>Backend:</strong> None</p> 
             <p><strong>Core Tech:</strong> WebRTC</p>
             <p><strong>Goal:</strong> Enable seamless P2P file sharing</p>
           
-        </section>
+        </section> */}
       </main>
       <Footer />
     </>

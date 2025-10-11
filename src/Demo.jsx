@@ -1,6 +1,7 @@
 import { useState } from 'react'
 // import './App.css'
 import Card from './components/Card'
+import Filecard from './components/Filecard'
 // import Header from './components/Header'
 import Button, { Buttonwhite } from './components/Button'
 import Footer from './components/Footer'
@@ -76,7 +77,14 @@ function Demo() {
 
           {step === 0 ? <Button text="Copy Connection Chunk" onClick={async () => {
             const desc = await weaveclass.create();
-            await handlecopy(desc);
+            const copied = await handlecopy(desc);
+            if (!copied){
+              setNotif(null);
+              setTimeout(() => {
+                setNotif({ title: "FAILED COPYING!", body: "Copy the text manually from the console at the end of the page." });
+                }, 100);
+              return;
+            }
             setstep(1);
             setNotif(null);
                 setTimeout(() => {
@@ -87,7 +95,14 @@ function Demo() {
           <Buttonwhite text="Copied Successfully!" onClick={async () => {
             setstep(1);
             const desc = await weaveclass.create();
-            await handlecopy(desc);
+            const copied = await handlecopy(desc);
+            if (!copied){
+              setNotif(null);
+              setTimeout(() => {
+                setNotif({ title: "FAILED COPYING!", body: "Copy the text manually from the console at the end of the page." });
+                }, 100);
+              return;
+            }
             setNotif(null);
                 setTimeout(() => {
                 setNotif({ title: "Copied Successfully!", body: "Share the link in your clipboard with the receiver." });
@@ -161,9 +176,17 @@ function Demo() {
         <p className="sectiondescK">Paste the chunk of text sent by the sender (just click the button)</p>
         <div className="buttonsK">
           {step===0 ? <Button text="Paste Chunk" onClick={
-            async () => {setstep(1);
+            async () => {
             // const localdesc = new weaveSender(log).create();
             const senderoffer = await handlepaste();
+            if (!senderoffer) {
+              setNotif(null);
+              setTimeout(() => {
+                setNotif({ title: "Clipboard empty", body: "clipboard empty make sure the entire chunk is copied." });
+                }, 100);
+              return;
+            }
+            setstep(1);
             setSenderOffer(senderoffer);
             setNotif(null);
                 setTimeout(() => {
@@ -186,7 +209,14 @@ function Demo() {
                 console.log("Received offer from clipboard:", senderOffer);
                 const reply = await weaveclass.offerbysender(JSON.parse(senderOffer));
                 setconnectionstate("connected");
-                await handlecopy(JSON.stringify(reply));
+                const copied = await handlecopy(JSON.stringify(reply));
+                if (!copied){
+                  setNotif(null);
+                  setTimeout(() => {
+                    setNotif({ title: "FAILED COPYING!", body: "Copy the text manually from the console at the end of the page." });
+                    }, 100);
+                  return;
+                }
                 setNotif(null);
                 setTimeout(() => {
                   setNotif({ title: "Copied Successfully!", body: "Share the chunk in your clipboard with the sender." });
@@ -211,12 +241,94 @@ function Demo() {
   // )
 
   const filesection = (
+    // since both can send an receive ill just make it dono ke liye cause honestly 
+    // only reason i kept it different is so that user can easily understand step number and stuff
+    // easy peasy
+    <> 
     <div className="sectioncardK">
-      <h2 className="sectiontitleK">Upload Files</h2>
+      <h2 className="sectiontitleK">Share Files</h2>
       <p className="sectionsubK">Select files to upload and send them to the connected peer.</p>
+      <label className="dropZone">
+        <input
+          type="file"
+          multiple
+          className="hiddenInput"
+        />
+        <div className="dropZoneContent">
+          <p>Drag and Drop or Click to upload</p>
+        </div>
+      </label>      
       {/* input bugging ill add it later */}
+      {/* <input
+        type="file"
+        multiple
+        onChange={async (e) => {
+          const files = e.target.files;
+          if (!files.length) return;
+
+          for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            log(`File selected: ${file.name} (${file.size} bytes)`);
+
+            const arrayBuffer = await file.arrayBuffer();
+
+            if (weaveclass && connectionstate === "connected") {
+              const base64 = btoa(
+                new Uint8Array(arrayBuffer)
+                  .reduce((data, byte) => data + String.fromCharCode(byte), '')
+              );
+              weaveclass.senddata(`file:${file.name}:${base64}`);
+              log(`Sent file: ${file.name}`);
+            } else {
+              log("Not connected or weaveclass undefined");
+            }
+          }
+
+          e.target.value = "";
+        }}
+      /> */}
+      <p style={{fontWeight: 'bold', minWidth: '100px'}}>Sending :</p>
+      <div className="filebufferarray" id="sendingfiles">
+        
+        <Filecard name="file1.txt" num="1" type="upload"/>
+        <Filecard name="file1.txt" num="0" type="done" />
+        <Filecard name="file2.txt" num="0" type="done" />
+        <Filecard name="file1.txt" num="0" type="done" />
+        <Filecard name="file2.txt" num="0" type="done" />
+        <Filecard name="file1.txt" num="0" type="done" />
+        <Filecard name="file2.txt" num="0" type="done" />
+        <Filecard name="file1.txt" num="0" type="done" />
+        <Filecard name="file2.txt" num="0" type="done" />
+
+        
+      </div>
+      <br/>
+      <p style={{fontWeight: 'bold', minWidth: '100px'}}>Sent : </p>
+      <div className="filebufferarray" id="sentfiles">
+        <Filecard name="file1.txt" num="0" type="done" />
+        <Filecard name="file2.txt" num="0" type="done" />
+        <Filecard name="file1.txt" num="0" type="done" />
+        <Filecard name="file2.txt" num="0" type="done" />
+        <Filecard name="file1.txt" num="0" type="done" />
+        <Filecard name="file2.txt" num="0" type="done" />
+      </div>
 
     </div>
+    <br/>
+    <div className="sectioncardK">
+      <h2 className="sectiontitleK">Received Files</h2>
+      <p className="sectionsubK">Click on the file received to download</p>
+      <p style={{fontWeight: 'bold', minWidth: '100px'}}>Received : </p>
+      <div className="filebufferarray" id="sentfiles">
+        <Filecard name="file1.txt" num="0" type="done" />
+        <Filecard name="file2.txt" num="0" type="done" />
+        <Filecard name="file1.txt" num="0" type="done" />
+        <Filecard name="file2.txt" num="0" type="done" />
+        <Filecard name="file1.txt" num="0" type="done" />
+        <Filecard name="file2.txt" num="0" type="done" />
+      </div>
+    </div>
+    </>
   );
 
 
@@ -261,7 +373,7 @@ function Demo() {
           <p className='welcomecont'>Scrolldown for sending msgs section/debug section</p>      
 
           { connectionstate === "connected" ? filesection : completeconnectionfirst }
-      
+          {filesection}
         </section>
 
         <section>
@@ -417,7 +529,7 @@ const handlepaste = async () => {
   } catch (err) {
     console.error("Failed to read clipboard contents:", err);
     alert("Clipboard access failed. Make sure the website has permission to access clipboard.");
-    return null;
+    return false;
   }
 };
 
@@ -426,9 +538,11 @@ const handlecopy = async (text) => {
   try {
     await navigator.clipboard.writeText(text);
     console.log('Text copied to clipboard: ' + text);
+    return true;
   } catch (err) {
     console.error('Failed to copy text: ', err);
-    alert("Clipboard access failed. Make sure the website has permission to access clipboard.");
+    alert("Clipboard access failed. Make sure the website has permission to access clipboard. Copy the text manually from the console at the end of the page.");
+    return false;
   }
 }
 
