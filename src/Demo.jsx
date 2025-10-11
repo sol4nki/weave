@@ -5,14 +5,64 @@ import Card from './components/Card'
 import Button, { Buttonwhite } from './components/Button'
 import Footer from './components/Footer'
 import './Demo.css'
+import Notif from './components/Notif'
 
 function Demo() {
   const [connectionstate, setconnectionstate] = useState("disconnected");
   const [usertype, setusertype] = useState(null);
   const [step, setstep] = useState(0);
   const [senderOffer, setSenderOffer] = useState(null); // zaruri hai stoprage ke for global scope
-  const log = (msg) => console.log(msg);
+  const log = (msg) => {
+    const container = document.getElementById('dbugconsole');
+    const para = document.createElement('p');
+    para.textContent = "> " + msg;
+    container.appendChild(para);
+    container.scrollTop = container.scrollHeight; // Auto-scroll to the bottom
+    console.log(msg);
+  };
   const [weaveclass, setweaveclass] = useState(null);
+  const [notif, setNotif] = useState(null);
+
+
+
+
+  const [messageToSend, setMessageToSend] = useState("");
+
+  const sendSection = (
+    <div className="sectioncardK">
+      <h2 className="sectionsubK" style={{ color: "#444", marginBottom: "0px" }}>Send Debug Message</h2>
+      <p className="sectionsubK">Send a test message to the connected peer. <br/>(Check the console below for received messages)</p>
+      <div className="sectionstepK">
+        <input
+          type="text"
+          value={messageToSend}
+          onChange={(e) => setMessageToSend(e.target.value)}
+          placeholder={connectionstate === "connected" ? "Type your debug message" : "Not connected yet wait for connection to establish"}
+          style={{ padding: "10px", width: "100%", marginBottom: "10px" }}
+          disabled={connectionstate !== "connected"}
+        
+        />
+        <div className="buttonsK">
+          <Button text="Send Message" onClick={() => {
+            if (weaveclass && connectionstate === "connected") {
+              weaveclass.senddata(messageToSend);
+              setMessageToSend("");
+            } else {
+              log("Not connected or weaveclass undefined");
+            }
+          }} />
+        </div>
+      </div>
+    </div>
+  );
+
+
+
+
+
+
+
+
 
   const senderSection = (
     <div className="sectioncardK">
@@ -28,7 +78,22 @@ function Demo() {
             const desc = await weaveclass.create();
             await handlecopy(desc);
             setstep(1);
-          }} /> : <Buttonwhite text="Copied Successfully!" onClick={() => {setstep(1); handlecopy(weaveclass.create());}} />}
+            setNotif(null);
+                setTimeout(() => {
+                setNotif({ title: "Copied Successfully!", body: "Share the link in your clipboard with the receiver." });
+                }, 100);
+            return;
+          }} /> : 
+          <Buttonwhite text="Copied Successfully!" onClick={async () => {
+            setstep(1);
+            const desc = await weaveclass.create();
+            await handlecopy(desc);
+            setNotif(null);
+                setTimeout(() => {
+                setNotif({ title: "Copied Successfully!", body: "Share the link in your clipboard with the receiver." });
+                }, 100);
+            return;
+          }} />}
           {/* {step === 1 ? <Button text="Paste Peer Link" onClick={() => setstep(2)} /> : <Buttonwhite text="Paste Peer Link"  />} */}
         </div>
       </div>
@@ -38,12 +103,46 @@ function Demo() {
         <p className="sectiondescK">Paste the chunk of text sent by the sender (just click the button)</p>
         <div className="buttonsK">
           {usertype === "sender" ? (step === 1 ? <Button text="Click to paste" onClick={async () => {
-            
-            setstep(2); 
-            const data = await handlepaste();
-            weaveclass.answerofreceiver(data);
-            setconnectionstate("connected");
+              const data = await handlepaste();
+              
+              if (!data) {
 
+                setNotif(null);
+                setTimeout(() => {
+                setNotif({ title: "Clipboard empty", body: "clipboard empty make sure the entire chunk is copied." });
+                }, 100);
+                return;
+              }
+
+              const result = await weaveclass.answerofreceiver(data);
+              if (result === 0) {
+                
+                setNotif(null);
+                setTimeout(() => {
+                  setNotif({ title: "Dont paste your own chunk!", body: "SHARE THIS WITH THE RECEIVER AND PASTE THE ONE THE RECEIVER SENT TO YOU!" });
+                }, 100);
+                return;
+
+              } else if (result === 1) {
+                // alert("Pasted successfully! Wait a few seconds for connection to finalize");
+                setstep(2);
+                setNotif(null);
+                setconnectionstate("connected");
+                setNotif(null);
+                setTimeout(() => {
+                  setNotif({ title: "Pasted successfully!", body: "Wait a few seconds for connection to finalize." });
+                }, 100);
+                return;
+                
+              } else if (result === -1) {
+                setNotif(null);
+                setTimeout(() => {
+                  setNotif({ title: "Clipboard Error", body: "The clipboard is empty or chunk is partial." });
+                }, 100);
+                return;
+
+                
+              }
             }} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
           {usertype === "receiver" ? (step === 1 ? <Button text="Click to copy" onClick={() => setstep(2)} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
         </div>
@@ -66,6 +165,11 @@ function Demo() {
             // const localdesc = new weaveSender(log).create();
             const senderoffer = await handlepaste();
             setSenderOffer(senderoffer);
+            setNotif(null);
+                setTimeout(() => {
+                setNotif({ title: "Pasted Successfully!", body: "You can now proceed to Step III." });
+                }, 100);
+            return;
           }} /> : <Buttonwhite text="Pasted Sucessfully!" />}
         </div>
       </div>
@@ -83,6 +187,11 @@ function Demo() {
                 const reply = await weaveclass.offerbysender(JSON.parse(senderOffer));
                 setconnectionstate("connected");
                 await handlecopy(JSON.stringify(reply));
+                setNotif(null);
+                setTimeout(() => {
+                  setNotif({ title: "Copied Successfully!", body: "Share the chunk in your clipboard with the sender." });
+                }, 100);
+                return;
 
               }
 
@@ -92,13 +201,56 @@ function Demo() {
       </div>
     </div>
   );
-  const filesection = (
-    <>
-      <input type="text" onInput={(e) => weaveclass.senddata("hello from " + e.target.value)} />
-      <Card />
-    </>
+  // const filesection = (
+  //   <>
+  //     {/* <input type="text" onInput={(e) => weaveclass.senddata("hello from " + e.target.value)} /> */}
+      
+  //     <Card />
+  //   </>
 
-  )
+  // )
+
+  const filesection = (
+    <div className="sectioncardK">
+      <h2 className="sectiontitleK">Upload Files</h2>
+      <p className="sectionsubK">Select files to upload and send them to the connected peer.</p>
+      <input
+        type="file"
+        multiple
+        onChange={async (e) => {
+          const files = e.target.files;
+          if (!files.length) return;
+
+          // Example: Log file names and sizes
+          for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            console.log(`File selected: ${file.name} (${file.size} bytes)`);
+
+            // Example: Read file as ArrayBuffer or text (modify as needed)
+            const arrayBuffer = await file.arrayBuffer();
+
+            // Example: Send file data as Uint8Array or base64 string, etc.
+            if (weaveclass && connectionstate === "connected") {
+              // Sending file data chunk (you may want to chunk large files)
+              // Here sending as base64 string for demo, adapt as needed
+              const base64 = btoa(
+                new Uint8Array(arrayBuffer)
+                  .reduce((data, byte) => data + String.fromCharCode(byte), '')
+              );
+              weaveclass.senddata(`file:${file.name}:${base64}`);
+              console.log(`Sent file: ${file.name}`);
+            } else {
+              console.log("Not connected or weaveclass undefined");
+            }
+          }
+
+          // Optionally clear the input to allow re-uploading same files later
+          e.target.value = "";
+        }}
+      />
+    </div>
+  );
+
 
   const completeconnectionfirst = (
     <>
@@ -112,6 +264,8 @@ function Demo() {
     <>
       {/* <Header/> */}
       <main>
+        {/* <Notif title="Dont paste your own chunk!" body="PASTE THE ONE THE RECEIVER SENT TO YOU!"/> */}
+        {notif && <Notif title={notif.title} body={notif.body} />}
         <section className="welcome">
             <div className="welcomecont">
                 <h1>DEMO</h1>
@@ -134,11 +288,25 @@ function Demo() {
           
         </section>
         <section>
-          <h6>UPLOAD FILES</h6>
-          <input type="text"  placeholder='type in the msg'/>
+          <h6>UPLOAD FILES</h6>    
+          <p className='welcomecont'>Upload files, scrolldown for sending msgs section/debug section</p>      
 
           { connectionstate === "connected" ? filesection : completeconnectionfirst }
       
+        </section>
+
+        <section>
+          <h6>SEND MESSAGES</h6>
+          <p className='welcomecont'>Just type in the message and hit send, it should reach the other user if not check the debug console below this section</p>
+          {sendSection}
+        </section>
+
+        <section>
+          <h6>CONSOLE LOGS</h6>
+          <p className='welcomecont'>Facing issues? Scroll the console area below for more information.</p>
+          <div id="dbugconsole" style={{backgroundColor: '#111', color: '#bbb', borderRadius: '8px', padding: '10px', height: '300px', overflowY: 'scroll', fontFamily: 'monospace', maxWidth: '720px'}}>
+            <p>~ This console is scrollable ^^</p>
+          </div>
         </section>
       </main>
       <Footer />
@@ -156,35 +324,49 @@ class weaveSender {
     this.dc.onopen = e => this.log("Sender: connection open " + e.data)
     // log(this.lc.localDescription)
   }
+  
   async create() {
-    this.lc.onicecandidate = () => 
-      this.log("new icecandidate: " + JSON.stringify(this.lc.localDescription));
-
-    const offer = await this.lc.createOffer();
-    await this.lc.setLocalDescription(offer);
-
-    this.log("set successful");
-
-    return JSON.stringify(this.lc.localDescription);
+    if (this.lc.localDescription) {
+      this.log("Offer already created.");
+      return JSON.stringify(this.lc.localDescription);
+    }
+    return new Promise(async (resolve) => {
+      this.lc.onicecandidate = e => {
+        if (e.candidate === null) {
+          this.log("Final offer with ICE: " + JSON.stringify(this.lc.localDescription));
+          resolve(JSON.stringify(this.lc.localDescription));  // bhai ice kaam nhi kr raha
+        }
+      };
+      const offer = await this.lc.createOffer();
+      await this.lc.setLocalDescription(offer);
+    });
   }
+
 
 
   senddata(data) {
-    if (this.lc.dc && this.lc.dc.readyState === "open") {
-      this.lc.dc.send(data);
+    if (this.dc && this.dc.readyState === "open") {
+      this.dc.send(data);
       this.log("sent: " + data);
     } else {
-      this.log("DataChannel not open yet!");
+      this.log("DataChannel not open yet! State: " + (this.dc?.readyState || 'null'));
     }
   }
-  answerofreceiver(answer=null) {
-    if (answer){
-      this.lc.setRemoteDescription(JSON.parse(answer))
-      this.log("new connection created finalized")
 
-    }
+  async answerofreceiver(answer=null) {
+    
+    if (answer){
+      if ( JSON.parse(answer).type === this.lc.localDescription.type &&
+           JSON.parse(answer).sdp === this.lc.localDescription.sdp ){
+        this.log("!! Bro this is your own description, paste the one the receiver sent you damn it, read the guide dude")
+        return 0
+      }
+      await this.lc.setRemoteDescription(JSON.parse(answer))
+      this.log("new connection created finalized")
+      return 1
+      } return -1
+    } 
   }
-}
 
 class weaveReceiver {
   constructor(log) {
@@ -207,7 +389,7 @@ class weaveReceiver {
       this.rc.dc.send(data);
       this.log("sent: " + data);
     } else {
-      this.log("DataChannel not open yet!");
+      this.log("DataChannel not open yet! State: " + (this.rc.dc?.readyState || 'null'));
     }
   }
 
@@ -216,8 +398,15 @@ class weaveReceiver {
       await this.rc.setRemoteDescription(offer);
       const answer = await this.rc.createAnswer();
       await this.rc.setLocalDescription(answer);
-      this.log("Receiver: answer created and set");
-      return this.rc.localDescription; // fixed the coppying wala part cause i m dumb
+      
+      return new Promise((resolve) => {
+        this.rc.onicecandidate = e => {
+          if (e.candidate === null) {
+            this.log("Receiver: answer ready");
+            resolve(this.rc.localDescription); // kuch kaanm nhi kar raha yaar FFF
+          }
+        };
+      });
     }
   }
 }
