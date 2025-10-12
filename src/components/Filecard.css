@@ -11,5 +11,12 @@
     max-width: 100%;              
     /* overflow-wrap: break-word;     */
     /* word-break: break-word;        */
+    transition: all 0.2s ease;
+}
 
+.filecontainer.clickable:hover {
+    background-color: #f0f8ff;
+    border-color: #4CAF50;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }

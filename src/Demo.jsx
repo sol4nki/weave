@@ -74,10 +74,26 @@ function Demo() {
             if (msg.type === "retransmit-request") {
               const chunk = this.chunks[msg.index];
               if (chunk) this.dc.send(chunk);
+            } else if (msg.type === "file-meta") {
+              this.incomingFile = { name: msg.name, size: parseInt(msg.size), mime: msg.mime };
+              this.receivedBuffers = [];
+              this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
+              console.log("File metadata received:", this.incomingFile);
             } else if (msg.type === "file-chunk-meta") {
               this.pendingMeta = msg;
             } else if (msg.type === "file-end") {
-              // done
+              const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
+              const url = URL.createObjectURL(blob);
+              this.log(`File received: ${this.incomingFile.name}`);
+              console.log("Adding file to receivedFiles:", { ...this.incomingFile, blobUrl: url });
+              console.log("Blob size:", blob.size);
+              console.log("Received buffers length:", this.receivedBuffers.length);
+              console.log("Original file size from metadata:", this.incomingFile.size);
+              // Use the actual blob size instead of metadata size for display
+              const fileData = { ...this.incomingFile, blobUrl: url, size: blob.size };
+              setReceivedFiles((prev) => [...prev, fileData]);
+              this.receivedBuffers = [];
+              this.incomingFile = null;
             }
             this.log("Received: " + event.data);
           } catch {
@@ -102,6 +118,9 @@ function Demo() {
             );
             console.warn("Chunk", this.pendingMeta.index, "failed hash check");
           }
+        } else {
+          // Binary chunk - add to received buffers
+          this.receivedBuffers.push(event.data);
         }
       };
 
@@ -111,41 +130,9 @@ function Demo() {
         setIsConnecting(false);
       };
       this.incomingFile = null;
+      this.fileQueue = []; // Queue for handling multiple files
       this.lc.ondatachannel = (e) => {
         this.dc = e.channel;
-
-        this.dc.onmessage = (event) => {
-          if (typeof event.data === "string") {
-            try {
-              const msg = JSON.parse(event.data);
-              if (msg.type === "file-meta") {
-                this.incomingFile = { name: msg.name, size: msg.size, mime: msg.mime };
-                this.receivedBuffers = [];
-                this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
-              } else if (msg.type === "file-end") {
-                const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = this.incomingFile.name;
-                a.textContent = `Download ${this.incomingFile.name}`;
-                document.getElementById("dbugconsole").appendChild(a);
-                this.log(`File received: ${this.incomingFile.name}`);
-                setReceivedFiles((prev) => [...prev, this.incomingFile]);
-                this.receivedBuffers = [];
-                this.incomingFile = null;
-              } else {
-                this.log("Received: " + event.data);
-              }
-            } catch {
-              this.log("Received message: " + event.data);
-            }
-          } else {
-            // Binary chunk
-            this.receivedBuffers.push(event.data);
-          }
-        };
-
         this.dc.onopen = () => {
           this.log("Receiver: connection open!");
           setConnectionStatus("connected");
@@ -323,17 +310,19 @@ function Demo() {
     }
 
     sendFile(file) {
-      const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
-      const reader = new FileReader();
-      const dc = this.dc;
-      const log = this.log;
+      return new Promise((resolve, reject) => {
+        const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
+        const reader = new FileReader();
+        const dc = this.dc;
+        const log = this.log;
 
-      if (!dc || dc.readyState !== "open") {
-        log("DataChannel not open yet! State: " + (dc?.readyState || "null"));
-        return;
-      }
+        if (!dc || dc.readyState !== "open") {
+          log("DataChannel not open yet! State: " + (dc?.readyState || "null"));
+          reject(new Error("DataChannel not open"));
+          return;
+        }
 
-      reader.onload = async (event) => {
+        reader.onload = async (event) => {
         const buffer = event.target.result;
         const fileId = file.name + Date.now();
         const startTime = Date.now();
@@ -346,7 +335,7 @@ function Demo() {
             type: "file-meta",
             name: file.name,
             size: buffer.byteLength,
-            mime: file.type || "application/octet-stream",
+            mime: file.file.type || "application/octet-stream",
           })
         );
 
@@ -396,7 +385,7 @@ function Demo() {
         log(`File sent successfully: ${file.name}`);
         setSentFilesxyz((prev) => [...prev, file]);
         setTimeout(() => {
-          setSendFiles((prev) => prev.filter((f) => f.name !== file.name));
+          setSendFiles((prev) => prev.filter((f) => f.key !== file.key));
           setTransferProgress(prev => {
             const newProgress = { ...prev };
             delete newProgress[fileId];
@@ -407,10 +396,12 @@ function Demo() {
             delete newSpeed[fileId];
             return newSpeed;
           });
+          resolve(); // Resolve the promise when file is completely sent
         }, 500);
       };
 
       reader.readAsArrayBuffer(file.file);
+      });
     }
   }
 
@@ -474,6 +465,7 @@ function Demo() {
       };
       this.incomingFile = null;
       this.receivedBuffers = [];
+      this.fileQueue = []; // Queue for handling multiple files
       this.chunks = [];
       this.pendingMeta = null;
 
@@ -485,29 +477,29 @@ function Demo() {
           if (typeof event.data === "string") {
             try {
               const msg = JSON.parse(event.data);
-              if (msg.type === "file-meta") {
-                this.incomingFile = { name: msg.name, size: msg.size, mime: msg.mime };
+              if (msg.type === "retransmit-request") {
+                const chunk = this.chunks[msg.index];
+                if (chunk) this.rc.dc.send(chunk);
+              } else if (msg.type === "file-meta") {
+                this.incomingFile = { name: msg.name, size: parseInt(msg.size), mime: msg.mime };
                 this.receivedBuffers = [];
                 this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
+                console.log("File metadata received:", this.incomingFile);
               } else if (msg.type === "file-chunk-meta") {
                 this.pendingMeta = msg;
               } else if (msg.type === "file-end") {
                 const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
                 const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = this.incomingFile.name;
-                a.textContent = `Download ${this.incomingFile.name}`;
-                document.getElementById("dbugconsole").appendChild(a);
                 this.log(`File received: ${this.incomingFile.name}`);
-
-                setReceivedFiles(prev => [...prev, this.incomingFile]);
-                console.log(this.incomingFile);
+                console.log("Adding file to receivedFiles:", { ...this.incomingFile, blobUrl: url });
+                console.log("Blob size:", blob.size);
+                console.log("Received buffers length:", this.receivedBuffers.length);
+                console.log("Original file size from metadata:", this.incomingFile.size);
+                // Use the actual blob size instead of metadata size for display
+                const fileData = { ...this.incomingFile, blobUrl: url, size: blob.size };
+                setReceivedFiles((prev) => [...prev, fileData]);
                 this.receivedBuffers = [];
                 this.incomingFile = null;
-              } else if (msg.type === "retransmit-request") {
-                const chunk = this.chunks[msg.index];
-                if (chunk) this.rc.dc.send(chunk);
               } else {
                 this.log("Received: " + event.data);
               }
@@ -533,6 +525,7 @@ function Demo() {
               console.warn("Chunk", this.pendingMeta.index, "failed hash check");
             }
           } else {
+            // Binary chunk - add to received buffers
             this.receivedBuffers.push(event.data);
           }
         };
@@ -664,17 +657,19 @@ function Demo() {
     }
     // wahi open data channel wali baat wapis L
     sendFile(file) {
-      const chunkSize = 16384;
-      const reader = new FileReader();
-      const dc = this.rc.dc;
-      const log = this.log;
+      return new Promise((resolve, reject) => {
+        const chunkSize = 16384;
+        const reader = new FileReader();
+        const dc = this.rc.dc;
+        const log = this.log;
 
-      if (!dc || dc.readyState !== "open") {
-        log("DataChannel not open yet! State: " + (dc?.readyState || 'null'));
-        return;
-      }
+        if (!dc || dc.readyState !== "open") {
+          log("DataChannel not open yet! State: " + (dc?.readyState || 'null'));
+          reject(new Error("DataChannel not open"));
+          return;
+        }
 
-      reader.onload = async (event) => {
+        reader.onload = async (event) => {
         const buffer = event.target.result;
         const fileId = file.name + Date.now();
         const startTime = Date.now();
@@ -686,7 +681,7 @@ function Demo() {
           type: "file-meta",
           name: file.name,
           size: buffer.byteLength,
-          mime: file.type || "application/octet-stream"
+          mime: file.file.type || "application/octet-stream"
         }));
 
         const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
@@ -733,9 +728,9 @@ function Demo() {
 
         dc.send(JSON.stringify({ type: "file-end", name: file.name }));
         log(`File sent successfully: ${file.name}`);
-        setSentFilesxyz(prev => [...prev, file.file]);
+        setSentFilesxyz(prev => [...prev, file]);
         setTimeout(() => {
-          setSendFiles(prev => prev.filter(f => f.name !== file.name));
+          setSendFiles(prev => prev.filter(f => f.key !== file.key));
           setTransferProgress(prev => {
             const newProgress = { ...prev };
             delete newProgress[fileId];
@@ -746,10 +741,12 @@ function Demo() {
             delete newSpeed[fileId];
             return newSpeed;
           });
+          resolve(); // Resolve the promise when file is completely sent
         }, 500);
       };
 
       reader.readAsArrayBuffer(file.file);
+      });
     }
 
 
@@ -903,6 +900,8 @@ function Demo() {
 
       setSendFiles(prev => [...prev, ...fileArray]);
     }
+    // Clear the input so the same files can be selected again
+    event.target.value = '';
   }
 
 
@@ -1139,6 +1138,7 @@ function Demo() {
       <label className="dropZone">
         <input
           type="file"
+          // multiple so multiple isnt working cause file sending is asynch but on reading metadata its synchronus and leads to conflict in meta data hence the last file's data is only printed without any meta data FF 
           multiple
           className="hiddenInput"
           id = "fileInput"
@@ -1160,11 +1160,18 @@ function Demo() {
           ) : (
             <p>No files uploaded yet.</p>
           )}
-        <button style={{marginTop: '10px'}} onClick={() => {
+        <button style={{marginTop: '10px'}} onClick={async () => {
           if (sendFiles.length > 0){
             for (let file of sendFiles) {
-              weaveclass.sendFile(file);
-              log(`Initiated sending for file: ${file.name}`);
+              try {
+                log(`Starting to send file: ${file.name}`);
+                await weaveclass.sendFile(file);
+                log(`Completed sending file: ${file.name}`);
+                // Add a shorter delay between files to ensure proper sequencing
+                await new Promise(resolve => setTimeout(resolve, 500));
+              } catch (error) {
+                log(`Error sending file ${file.name}: ${error.message}`);
+              }
             }
         }
         }}> Send Files </button>
@@ -1222,7 +1229,8 @@ function Demo() {
         {receivedFiles.length > 0 ? (
             receivedFiles?.map((file, index) => {
               if (!file) return null;
-              return <Filecard key={file.name + Math.random().toString(36).substring(2, 10)} name={file.name} num={index+1} type={"received"} size={file.size}/>;
+              console.log("Rendering received file:", file);
+              return <Filecard key={file.name + Math.random().toString(36).substring(2, 10)} name={file.name} num={index+1} type={"received"} size={file.size} blobUrl={file.blobUrl}/>;
             })
           ) : (
             <p>No files received yet.</p>
