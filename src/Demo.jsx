@@ -1113,7 +1113,7 @@ function Demo() {
               }
 
             }} 
-            /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
+            /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Copied Successfully!" />)) : null}
         </div>
       </div>
     </div>

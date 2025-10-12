@@ -29,17 +29,17 @@ function Home() {
         
         <section>
           <h6>CONCEPT</h6>
-          <p className='welcomecont'>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+          <p className='welcomecont'>Ever wanted to share files with someone but your Google Drive was full and you were just scared of sharing files over shady file sharing platforms not knowing what they are going to do with your personal data? Fear not weave provides a way to share data with <strong>no limits, no fees,</strong> nothing in between, just YOU and the RECEIVER! No gimmicks, no login or signup required, fully private and protected, and <strong>completely secure</strong>.</p>
         </section>
         <section>
           <h6>CORE FEATURES</h6>
           <div className="cardcontainer">
-            <Card number='01' heading='Easy to use' description='idk bruh' />
-            <Card number='02' heading='Fast and Secure' description='idk bruh' />
-            <Card number='03' heading='Reliable' description='idk bruh' />
-            <Card number='04' heading='Direct Connection' description='idk bruh' />
-            <Card number='05' heading='Fully P2P' description='idk bruh' />
-            <Card number='06' heading='Lossless Transmission' description='idk bruh' />
+            <Card number='01' heading='Easy to use' description='Only 4 steps to establish a connection, follow the guide provided for detailed explanation.' />
+            <Card number='02' heading='Fast and Secure' description='All the data stays between you and the receiver, no one else can access it.' />
+            <Card number='03' heading='Reliable' description='We use hashing on each 16Kb chunk of data that is travelling to prevent data corruption incase of connection issues.' />
+            <Card number='04' heading='No Quality Reduction' description='We ensure that all your data is sent as it is. bit to bit' />
+            <Card number='05' heading='100% Peer-to-Peer' description='All data is shared directly between users without any central server.' />
+            <Card number='06' heading='Lossless Transmission' description='We use hashing on each 16Kb chunk of data that is travelling to prevent data corruption incase of connection issues.' />
             
           </div>
         </section>
