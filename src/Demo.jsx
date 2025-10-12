@@ -1160,7 +1160,7 @@ function Demo() {
           ) : (
             <p>No files uploaded yet.</p>
           )}
-        <button style={{marginTop: '10px'}} onClick={async () => {
+        <button className="sendfilebutton" onClick={async () => {
           if (sendFiles.length > 0){
             for (let file of sendFiles) {
               try {

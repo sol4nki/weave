@@ -17,6 +17,6 @@
 .filecontainer.clickable:hover {
     background-color: #f0f8ff;
     border-color: #4CAF50;
-    transform: translateY(-1px);
+    transform: scale(0.98);
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }

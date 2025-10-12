@@ -104,3 +104,19 @@
 input[type="file"] {
   display: none;
 }
+
+.sendfilebutton {
+  background-color: #1b1b1b;
+  color: white;
+  padding: 0px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.3s ease;
+}
+
+.sendfilebutton:hover {
+  background-color: #3f3f3f;
+  scale: 0.98;
+}
