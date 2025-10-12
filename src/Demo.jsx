@@ -59,6 +59,8 @@ function Demo() {
       });
 
       this.dc = this.lc.createDataChannel("channel");
+      // Ensure binary frames arrive as ArrayBuffer (some browsers use Blob by default)
+      try { this.dc.binaryType = 'arraybuffer'; } catch (e) { /* ignore if not supported */ }
       this.chunks = [];
       this.receivedBuffers = [];
       
@@ -68,6 +70,7 @@ function Demo() {
       this.lastIceConnectionState = null;
 
       this.dc.onmessage = async (event) => {
+        // Distinguish string control messages from binary chunks
         if (typeof event.data === "string") {
           try {
             const msg = JSON.parse(event.data);
@@ -82,14 +85,15 @@ function Demo() {
             } else if (msg.type === "file-chunk-meta") {
               this.pendingMeta = msg;
             } else if (msg.type === "file-end") {
-              const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
+              // Ensure all stored buffers are ArrayBuffer or Uint8Array before creating Blob
+              const normalized = this.receivedBuffers.map(b => b instanceof ArrayBuffer ? new Uint8Array(b) : b instanceof Uint8Array ? b : b);
+              const blob = new Blob(normalized, { type: this.incomingFile?.mime || 'application/octet-stream' });
               const url = URL.createObjectURL(blob);
               this.log(`File received: ${this.incomingFile.name}`);
               console.log("Adding file to receivedFiles:", { ...this.incomingFile, blobUrl: url });
               console.log("Blob size:", blob.size);
               console.log("Received buffers length:", this.receivedBuffers.length);
-              console.log("Original file size from metadata:", this.incomingFile.size);
-              // Use the actual blob size instead of metadata size for display
+              console.log("Original file size from metadata:", this.incomingFile?.size);
               const fileData = { ...this.incomingFile, blobUrl: url, size: blob.size };
               setReceivedFiles((prev) => [...prev, fileData]);
               this.receivedBuffers = [];
@@ -99,28 +103,38 @@ function Demo() {
           } catch {
             this.log("Received message: " + event.data);
           }
-        } else if (this.pendingMeta) {
-          const chunk = event.data;
-          const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
-          const hashArray = Array.from(new Uint8Array(hashBuffer));
-          const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-          if (hashHex === this.pendingMeta.hash) {
-            this.receivedBuffers[this.pendingMeta.index] = chunk;
-            this.pendingMeta = null;
-          } else {
-            // aagar hash mismatch hai toh retransmit req ez
-            this.dc.send(
-              JSON.stringify({
-                type: "retransmit-request",
-                index: this.pendingMeta.index,
-              })
-            );
-            console.warn("Chunk", this.pendingMeta.index, "failed hash check");
-          }
         } else {
-          // Binary chunk - add to received buffers
-          this.receivedBuffers.push(event.data);
+          // Binary path - normalize incoming chunk (Blob -> ArrayBuffer)
+          let chunk = event.data;
+          if (chunk instanceof Blob) {
+            try {
+              chunk = await chunk.arrayBuffer();
+            } catch (e) {
+              console.warn('Failed to convert Blob to ArrayBuffer:', e);
+            }
+          }
+
+          if (this.pendingMeta) {
+            const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+            if (hashHex === this.pendingMeta.hash) {
+              this.receivedBuffers[this.pendingMeta.index] = chunk;
+              this.pendingMeta = null;
+            } else {
+              this.dc.send(
+                JSON.stringify({
+                  type: "retransmit-request",
+                  index: this.pendingMeta.index,
+                })
+              );
+              console.warn("Chunk", this.pendingMeta.index, "failed hash check");
+            }
+          } else {
+            // No meta provided for this chunk; store raw
+            this.receivedBuffers.push(chunk);
+          }
         }
       };
 
@@ -133,6 +147,7 @@ function Demo() {
       this.fileQueue = []; // Queue for handling multiple files
       this.lc.ondatachannel = (e) => {
         this.dc = e.channel;
+        try { this.dc.binaryType = 'arraybuffer'; } catch (err) { /* ignore */ }
         this.dc.onopen = () => {
           this.log("Receiver: connection open!");
           setConnectionStatus("connected");
@@ -241,6 +256,7 @@ function Demo() {
     
     setupConnectionHandlers() {
       this.dc = this.lc.createDataChannel("channel");
+      try { this.dc.binaryType = 'arraybuffer'; } catch (err) { /* ignore */ }
       this.dc.onopen = (e) => {
         this.log("Sender: connection open " + e.data);
         setConnectionStatus("connected");
@@ -472,6 +488,7 @@ function Demo() {
       // receive wala logic (function ki zarurat nhi cause obviously open data channel pe aa raha hai toh process hojayega khud hi)
       this.rc.ondatachannel = e => {
         this.rc.dc = e.channel;
+        try { this.rc.dc.binaryType = 'arraybuffer'; } catch (err) { /* ignore */ }
 
         this.rc.dc.onmessage = async (event) => {
           if (typeof event.data === "string") {
@@ -488,7 +505,8 @@ function Demo() {
               } else if (msg.type === "file-chunk-meta") {
                 this.pendingMeta = msg;
               } else if (msg.type === "file-end") {
-                const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
+                const normalized = this.receivedBuffers.map(b => b instanceof ArrayBuffer ? new Uint8Array(b) : b instanceof Uint8Array ? b : b);
+                const blob = new Blob(normalized, { type: this.incomingFile?.mime || 'application/octet-stream' });
                 const url = URL.createObjectURL(blob);
                 this.log(`File received: ${this.incomingFile.name}`);
                 console.log("Adding file to receivedFiles:", { ...this.incomingFile, blobUrl: url });
@@ -506,27 +524,33 @@ function Demo() {
             } catch {
               this.log("Received message: " + event.data);
             }
-          } else if (this.pendingMeta) {
-            const chunk = event.data;
-            const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-            if (hashHex === this.pendingMeta.hash) {
-              this.receivedBuffers[this.pendingMeta.index] = chunk;
-              this.pendingMeta = null;
-            } else {
-              this.rc.dc.send(
-                JSON.stringify({
-                  type: "retransmit-request",
-                  index: this.pendingMeta.index,
-                })
-              );
-              console.warn("Chunk", this.pendingMeta.index, "failed hash check");
-            }
           } else {
-            // Binary chunk - add to received buffers
-            this.receivedBuffers.push(event.data);
+            // Binary chunk - normalize Blob -> ArrayBuffer if necessary
+            let chunk = event.data;
+            if (chunk instanceof Blob) {
+              try { chunk = await chunk.arrayBuffer(); } catch (e) { console.warn('Failed to convert Blob to ArrayBuffer:', e); }
+            }
+
+            if (this.pendingMeta) {
+              const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
+              const hashArray = Array.from(new Uint8Array(hashBuffer));
+              const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+              if (hashHex === this.pendingMeta.hash) {
+                this.receivedBuffers[this.pendingMeta.index] = chunk;
+                this.pendingMeta = null;
+              } else {
+                this.rc.dc.send(
+                  JSON.stringify({
+                    type: "retransmit-request",
+                    index: this.pendingMeta.index,
+                  })
+                );
+                console.warn("Chunk", this.pendingMeta.index, "failed hash check");
+              }
+            } else {
+              this.receivedBuffers.push(chunk);
+            }
           }
         };
 
@@ -825,7 +849,6 @@ function Demo() {
 
 
 
-  const [connectionstate, setconnectionstate] = useState("disconnected");
   const [usertype, setusertype] = useState(null);
   const [step, setstep] = useState(0);
   const [senderOffer, setSenderOffer] = useState(null);
@@ -1018,7 +1041,7 @@ function Demo() {
 
               } else if (result === 1) {
                 setstep(2);
-                setconnectionstate("connected");
+                setConnectionStatus("connected");
                 setNotif(null);
                 setTimeout(() => {
                   setNotif({ title: "Pasted successfully!", body: "Wait a few seconds for connection to finalize." });
@@ -1103,7 +1126,7 @@ function Demo() {
                   return;
                 }
                 
-                setconnectionstate("connected");
+                setConnectionStatus("connected");
                 setNotif(null);
                 setTimeout(() => {
                   setNotif({ title: "Copied Successfully!", body: "Share the chunk in your clipboard with the sender." });
@@ -1130,7 +1153,7 @@ function Demo() {
                   return;
                 }
                 
-                setconnectionstate("connected");
+                setConnectionStatus("connected");
                 setNotif(null);
                 setTimeout(() => {
                   setNotif({ title: "Copied Successfully!", body: "Share the chunk in your clipboard with the sender." });
@@ -1408,7 +1431,7 @@ function Demo() {
                       navigator.clipboard.writeText(generatedText).then(() => {
                         setShowManualCopy(false);
                         setGeneratedText("");
-                        weaveclass.log("manual text generated");
+                        weaveclass?.log("manual text generated");
                         setstep(2); // yaar mai nhi check kar raha baar baar aab steps i m tired
                       });
                     }}
@@ -1427,7 +1450,7 @@ function Demo() {
                     onClick={() => {
                       setShowManualCopy(false);
                       setGeneratedText("");
-                      weaveclass.log("manual copy closed");
+                      weaveclass?.log("manual copy closed");
                       setstep(2); // yaar mai nhi check kar raha baar baar aab steps i m tired
                     }}
                     style={{
