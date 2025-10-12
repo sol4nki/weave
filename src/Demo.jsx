@@ -15,30 +15,83 @@ function Demo() {
   class weaveSender {
     constructor(log) {
       this.log = log;
-      this.usertype = "sender"
+      this.usertype = "sender";
       this.lc = new RTCPeerConnection({
         iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun.l.google.com:5349" },
-            { urls: "stun:stun1.l.google.com:3478" },
-            { urls: "stun:stun1.l.google.com:5349" },
-            { urls: "stun:stun2.l.google.com:19302" },
-            { urls: "stun:stun2.l.google.com:5349" },
-            { urls: "stun:stun3.l.google.com:3478" },
-            { urls: "stun:stun3.l.google.com:5349" },
-            { urls: "stun:stun4.l.google.com:19302" },
-            { urls: "stun:stun4.l.google.com:5349" }
-        ]
+          // STUN servers for local network discovery
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:3478" },
+          { urls: "stun:stun2.l.google.com:19302" },
+          { urls: "stun:stun3.l.google.com:3478" },
+          { urls: "stun:stun4.l.google.com:19302" },
+          // TURN servers for cross-network connectivity
+          { 
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          { 
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject", 
+            credential: "openrelayproject"
+          },
+          { 
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          }
+        ],
+        iceCandidatePoolSize: 10
       });
-      this.dc = this.lc.createDataChannel("channel")
-      this.dc.onmessage = e => this.log("Recieved: " + e.data)
-      this.dc.onopen = e => this.log("Sender: connection open " + e.data)
-      this.incomingFile = null;
+
+      this.dc = this.lc.createDataChannel("channel");
+      this.chunks = [];
       this.receivedBuffers = [];
-      this.lc.ondatachannel = e => {
+
+      this.dc.onmessage = async (event) => {
+        if (typeof event.data === "string") {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "retransmit-request") {
+              const chunk = this.chunks[msg.index];
+              if (chunk) this.dc.send(chunk);
+            } else if (msg.type === "file-chunk-meta") {
+              this.pendingMeta = msg;
+            } else if (msg.type === "file-end") {
+              // done
+            }
+            this.log("Received: " + event.data);
+          } catch {
+            this.log("Received message: " + event.data);
+          }
+        } else if (this.pendingMeta) {
+          const chunk = event.data;
+          const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+          if (hashHex === this.pendingMeta.hash) {
+            this.receivedBuffers[this.pendingMeta.index] = chunk;
+            this.pendingMeta = null;
+          } else {
+            // aagar hash mismatch hai toh retransmit req ez
+            this.dc.send(
+              JSON.stringify({
+                type: "retransmit-request",
+                index: this.pendingMeta.index,
+              })
+            );
+            console.warn("Chunk", this.pendingMeta.index, "failed hash check");
+          }
+        }
+      };
+
+      this.dc.onopen = (e) => this.log("Sender: connection open " + e.data);
+      this.incomingFile = null;
+      this.lc.ondatachannel = (e) => {
         this.dc = e.channel;
 
-        this.dc.onmessage = event => {
+        this.dc.onmessage = (event) => {
           if (typeof event.data === "string") {
             try {
               const msg = JSON.parse(event.data);
@@ -49,13 +102,13 @@ function Demo() {
               } else if (msg.type === "file-end") {
                 const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
                 const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
+                const a = document.createElement("a");
                 a.href = url;
                 a.download = this.incomingFile.name;
                 a.textContent = `Download ${this.incomingFile.name}`;
                 document.getElementById("dbugconsole").appendChild(a);
                 this.log(`File received: ${this.incomingFile.name}`);
-                setReceivedFiles(prev => [...prev, this.incomingFile]);
+                setReceivedFiles((prev) => [...prev, this.incomingFile]);
                 this.receivedBuffers = [];
                 this.incomingFile = null;
               } else {
@@ -74,50 +127,123 @@ function Demo() {
       };
       // log(this.lc.localDescription)
     }
-    
+
     async create() {
       if (this.lc.localDescription) {
         this.log("Offer already created.");
         return JSON.stringify(this.lc.localDescription);
       }
-      return new Promise(async (resolve) => {
-        this.lc.onicecandidate = e => {
-          if (e.candidate === null) {
-            this.log("Final offer with ICE: " + JSON.stringify(this.lc.localDescription));
-            resolve(JSON.stringify(this.lc.localDescription));  // bhai ice kaam nhi kr raha
+      return new Promise(async (resolve, reject) => {
+        let iceGatheringComplete = false;
+        let offerCreated = false;
+        
+        // Set up ICE gathering state monitoring
+        this.lc.onicegatheringstatechange = () => {
+          this.log(`ICE gathering state: ${this.lc.iceGatheringState}`);
+          if (this.lc.iceGatheringState === 'complete' && offerCreated) {
+            iceGatheringComplete = true;
+            this.log("ICE gathering completed - final offer ready");
+            resolve(JSON.stringify(this.lc.localDescription));
           }
         };
-        const offer = await this.lc.createOffer();
-        await this.lc.setLocalDescription(offer);
+
+        // Set up ICE candidate handling
+        this.lc.onicecandidate = (e) => {
+          if (e.candidate) {
+            this.log(`ICE candidate: ${e.candidate.candidate}`);
+          } else {
+            this.log("ICE candidate gathering finished");
+            if (!iceGatheringComplete && offerCreated) {
+              iceGatheringComplete = true;
+              this.log("Final offer with ICE: " + JSON.stringify(this.lc.localDescription));
+              resolve(JSON.stringify(this.lc.localDescription));
+            }
+          }
+        };
+
+        // Set up connection state monitoring
+        this.lc.onconnectionstatechange = () => {
+          this.log(`Connection state: ${this.lc.connectionState}`);
+          if (this.lc.connectionState === 'failed') {
+            this.log("Connection failed - check network connectivity");
+          }
+        };
+
+        try {
+          const offer = await this.lc.createOffer();
+          await this.lc.setLocalDescription(offer);
+          offerCreated = true;
+          this.log("Offer created, gathering ICE candidates...");
+          
+          // Fallback timeout in case ICE gathering doesn't complete
+          setTimeout(() => {
+            if (!iceGatheringComplete) {
+              this.log("ICE gathering timeout - using offer without complete ICE");
+              resolve(JSON.stringify(this.lc.localDescription));
+            }
+          }, 10000); // 10 second timeout
+          
+        } catch (error) {
+          this.log(`Error creating offer: ${error.message}`);
+          reject(error);
+        }
       });
     }
-
-
 
     senddata(data) {
       if (this.dc && this.dc.readyState === "open") {
         this.dc.send(data);
         this.log("sent: " + data);
       } else {
-        this.log("DataChannel not open yet! State: " + (this.dc?.readyState || 'null'));
+        this.log("DataChannel not open yet! State: " + (this.dc?.readyState || "null"));
       }
     }
 
-    async answerofreceiver(answer=null) {
-      
-      if (answer){
-        if ( JSON.parse(answer).type === this.lc.localDescription.type &&
-            JSON.parse(answer).sdp === this.lc.localDescription.sdp ){
-          this.log("!! Bro this is your own description, paste the one the receiver sent you damn it, read the guide dude")
-          return 0
-        }
-        await this.lc.setRemoteDescription(JSON.parse(answer))
-        this.log("new connection created finalized")
+    async answerofreceiver(answer = null) {
+      if (answer) {
+        try {
+          const parsedAnswer = JSON.parse(answer);
+          
+          if (
+            parsedAnswer.type === this.lc.localDescription.type &&
+            parsedAnswer.sdp === this.lc.localDescription.sdp
+          ) {
+            this.log(
+              "!! Bro this is your own description, paste the one the receiver sent you damn it, read the guide dude"
+            );
+            return 0;
+          }
+          
+          await this.lc.setRemoteDescription(parsedAnswer);
+          this.log("Remote description set successfully");
+          
+          // Monitor connection state
+          this.lc.onconnectionstatechange = () => {
+            this.log(`Connection state: ${this.lc.connectionState}`);
+            if (this.lc.connectionState === 'connected') {
+              this.log("Connection established successfully!");
+            } else if (this.lc.connectionState === 'failed') {
+              this.log("Connection failed - check network connectivity and firewall settings");
+            }
+          };
 
-        return 1
-        } 
-        return -1
-    } 
+          // Monitor ICE connection state
+          this.lc.oniceconnectionstatechange = () => {
+            this.log(`ICE connection state: ${this.lc.iceConnectionState}`);
+            if (this.lc.iceConnectionState === 'failed') {
+              this.log("ICE connection failed - this usually means network connectivity issues");
+            }
+          };
+
+          this.log("new connection created finalized");
+          return 1;
+        } catch (error) {
+          this.log(`Error setting remote description: ${error.message}`);
+          return -1;
+        }
+      }
+      return -1;
+    }
 
     sendFile(file) {
       const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
@@ -126,40 +252,60 @@ function Demo() {
       const log = this.log;
 
       if (!dc || dc.readyState !== "open") {
-        log("DataChannel not open yet! State: " + (dc?.readyState || 'null'));
+        log("DataChannel not open yet! State: " + (dc?.readyState || "null"));
         return;
       }
+
       reader.onload = async (event) => {
         const buffer = event.target.result;
         log(`Sending file: ${file.name} (${buffer.byteLength} bytes)`);
 
-        dc.send(JSON.stringify({
-          type: "file-meta",
-          name: file.name,
-          size: buffer.byteLength,
-          mime: file.type || "application/octet-stream"
-        }));
+        dc.send(
+          JSON.stringify({
+            type: "file-meta",
+            name: file.name,
+            size: buffer.byteLength,
+            mime: file.type || "application/octet-stream",
+          })
+        );
 
-        for (let offset = 0; offset < buffer.byteLength; offset += chunkSize) {
-          const chunk = buffer.slice(offset, offset + chunkSize);
-          console.log(chunk);
-          dc.send(chunk); // yahan pe add karna hai hASH of the data
-          await new Promise(r => setTimeout(r, 10)); 
+        const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
+        this.chunks = new Array(totalChunks);
+
+        for (let i = 0; i < totalChunks; i++) {
+          const chunk = buffer.slice(i * chunkSize, (i + 1) * chunkSize);
+          this.chunks[i] = chunk;
+          const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+          // bss metadata
+          dc.send(
+            JSON.stringify({
+              type: "file-chunk-meta",
+              index: i,
+              hash: hashHex,
+            })
+          );
+
+          dc.send(chunk);
+
+          // dc.send(chunk); // yahan pe add karna hai hASH of the data
+          await new Promise((r) => setTimeout(r, 10));
         }
 
         dc.send(JSON.stringify({ type: "file-end", name: file.name }));
         log(`File sent successfully: ${file.name}`);
-        setSentFilesxyz(prev => [...prev, file]);
+        setSentFilesxyz((prev) => [...prev, file]);
         setTimeout(() => {
-          setSendFiles(prev => prev.filter(f => f.name !== file.name));
+          setSendFiles((prev) => prev.filter((f) => f.name !== file.name));
         }, 500);
       };
 
       reader.readAsArrayBuffer(file.file);
     }
-
-
   }
+
 
 
   class weaveReceiver {
@@ -168,25 +314,33 @@ function Demo() {
       this.usertype = "receiver";
       this.rc = new RTCPeerConnection({
         iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun.l.google.com:5349" },
-            { urls: "stun:stun1.l.google.com:3478" },
-            { urls: "stun:stun1.l.google.com:5349" },
-            { urls: "stun:stun2.l.google.com:19302" },
-            { urls: "stun:stun2.l.google.com:5349" },
-            { urls: "stun:stun3.l.google.com:3478" },
-            { urls: "stun:stun3.l.google.com:5349" },
-            { urls: "stun:stun4.l.google.com:19302" },
-            { urls: "stun:stun4.l.google.com:5349" }
-        ]
+          // STUN servers for local network discovery
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:3478" },
+          { urls: "stun:stun2.l.google.com:19302" },
+          { urls: "stun:stun3.l.google.com:3478" },
+          { urls: "stun:stun4.l.google.com:19302" },
+          // TURN servers for cross-network connectivity
+          { 
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          { 
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject", 
+            credential: "openrelayproject"
+          },
+          { 
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          }
+        ],
+        iceCandidatePoolSize: 10
       });
 
       this.rc.onicecandidate = () => this.log("new icecandidate" + JSON.stringify(this.rc.localDescription));
-      this.rc.ondatachannel = e => {
-        this.rc.dc = e.channel
-        this.rc.dc.onmessage = e => this.log("Recieved: " + e.data)
-        this.rc.dc.onopen = e => this.log("Receiver: connection open!")
-      }
       this.incomingFile = null;
       this.receivedBuffers = [];
 
@@ -244,20 +398,64 @@ function Demo() {
 
     async offerbysender(offer = null) {
       if (offer) {
-        await this.rc.setRemoteDescription(offer);
-        const answer = await this.rc.createAnswer();
-        await this.rc.setLocalDescription(answer);
-        // this.log("Full answer SDP:", answer);
+        const parsedOffer = typeof offer === "string" ? JSON.parse(offer) : offer;
+        
+        try {
+          await this.rc.setRemoteDescription(new RTCSessionDescription(parsedOffer));
+          this.log("Remote description set successfully");
+          
+          const answer = await this.rc.createAnswer();
+          await this.rc.setLocalDescription(answer);
+          this.log("Answer created, gathering ICE candidates...");
 
-        return new Promise((resolve) => {
-          this.rc.onicecandidate = e => {
-            if (e.candidate === null) {
-              this.log("Receiver: answer ready");
-              resolve(this.rc.localDescription);
-              this.log(JSON.stringify(this.rc.localDescription)); // kuch kaanm nhi kar raha yaar FFF
-            }
-          };
-        });
+          return new Promise((resolve, reject) => {
+            let iceGatheringComplete = false;
+            
+            
+            this.rc.onicegatheringstatechange = () => {
+              this.log(`ICE gathering state: ${this.rc.iceGatheringState}`);
+              if (this.rc.iceGatheringState === 'complete') {
+                iceGatheringComplete = true;
+                this.log("ICE gathering completed - final answer ready");
+                resolve(this.rc.localDescription);
+              }
+            };
+
+            
+            this.rc.onicecandidate = e => {
+              if (e.candidate) {
+                this.log(`ICE candidate: ${e.candidate.candidate}`);
+              } else {
+                this.log("ICE candidate gathering finished");
+                if (!iceGatheringComplete) {
+                  iceGatheringComplete = true;
+                  this.log("Receiver: answer ready");
+                  resolve(this.rc.localDescription);
+                }
+              }
+            };
+
+            
+            this.rc.onconnectionstatechange = () => {
+              this.log(`Connection state: ${this.rc.connectionState}`);
+              if (this.rc.connectionState === 'failed') {
+                this.log("Connection failed - check network connectivity");
+              }
+            };
+
+            
+            setTimeout(() => {
+              if (!iceGatheringComplete) {
+                this.log("ICE gathering timeout - using answer without complete ICE");
+                resolve(this.rc.localDescription);
+              }
+            }, 10000); // 10 second timeout
+            
+          });
+        } catch (error) {
+          this.log(`Error processing offer: ${error.message}`);
+          throw error;
+        }
       }
     }
     // wahi open data channel wali baat wapis L
@@ -266,6 +464,11 @@ function Demo() {
       const reader = new FileReader();
       const dc = this.rc.dc;
       const log = this.log;
+
+      if (!dc || dc.readyState !== "open") {
+        log("DataChannel not open yet! State: " + (dc?.readyState || 'null'));
+        return;
+      }
 
       reader.onload = async (event) => {
         const buffer = event.target.result;
@@ -299,7 +502,6 @@ function Demo() {
 
 
   }
-
 
   const handlepaste = async () => {
     try {
@@ -594,11 +796,11 @@ function Demo() {
           {usertype === "sender" ? (step === 1 ? <Button text="Click to paste" onClick={async () => {setstep(2); await handlepaste();}} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
           {usertype === "receiver" ? (step === 1 ? <Button text="Click to copy" onClick={async () => 
             {
-              setstep(2);
+              
               if (senderOffer){
                 console.log("Received offer from clipboard:", senderOffer);
                 const reply = await weaveclass.offerbysender(JSON.parse(senderOffer));
-                setconnectionstate("connected");
+                
                 const copied = await handlecopy(JSON.stringify(reply));
                 if (!copied){
                   setNotif(null);
@@ -607,6 +809,8 @@ function Demo() {
                     }, 100);
                   return;
                 }
+                setstep(2);
+                setconnectionstate("connected");
                 setNotif(null);
                 setTimeout(() => {
                   setNotif({ title: "Copied Successfully!", body: "Share the chunk in your clipboard with the sender." });
