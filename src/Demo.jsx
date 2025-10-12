@@ -161,6 +161,7 @@ function Demo() {
         return JSON.stringify(this.lc.localDescription);
       }
       
+      setIsGenerating(true);
       setIsConnecting(true);
       setConnectionStatus("connecting");
       
@@ -176,6 +177,7 @@ function Demo() {
           if (this.lc.iceGatheringState === 'complete' && offerCreated) {
             iceGatheringComplete = true;
             this.log("ICE gathering completed - final offer ready");
+            setIsGenerating(false);
             resolve(JSON.stringify(this.lc.localDescription));
           }
         };
@@ -188,6 +190,7 @@ function Demo() {
             if (!iceGatheringComplete && offerCreated) {
               iceGatheringComplete = true;
               this.log("Final offer with ICE: " + JSON.stringify(this.lc.localDescription));
+              setIsGenerating(false);
               resolve(JSON.stringify(this.lc.localDescription));
             }
           }
@@ -214,12 +217,14 @@ function Demo() {
           setTimeout(() => {
             if (!iceGatheringComplete) {
               this.log("ICE gathering timeout - using offer without complete ICE");
+              setIsGenerating(false);
               resolve(JSON.stringify(this.lc.localDescription));
             }
           }, 10000);
           
         } catch (error) {
           this.log(`Error creating offer: ${error.message}`);
+          setIsGenerating(false);
           setIsConnecting(false);
           setConnectionStatus("failed");
           reject(error);
@@ -554,6 +559,7 @@ function Demo() {
       if (offer) {
         const parsedOffer = typeof offer === "string" ? JSON.parse(offer) : offer;
         
+        setIsGenerating(true);
         setIsConnecting(true);
         setConnectionStatus("connecting");
         
@@ -576,6 +582,7 @@ function Demo() {
               if (this.rc.iceGatheringState === 'complete') {
                 iceGatheringComplete = true;
                 this.log("ICE gathering completed - final answer ready");
+                setIsGenerating(false);
                 resolve(this.rc.localDescription);
               }
             };
@@ -588,6 +595,7 @@ function Demo() {
                 if (!iceGatheringComplete) {
                   iceGatheringComplete = true;
                   this.log("Receiver: answer ready");
+                  setIsGenerating(false);
                   resolve(this.rc.localDescription);
                 }
               }
@@ -608,6 +616,7 @@ function Demo() {
             setTimeout(() => {
               if (!iceGatheringComplete) {
                 this.log("ICE gathering timeout - using answer without complete ICE");
+                setIsGenerating(false);
                 resolve(this.rc.localDescription);
               }
             }, 10000);
@@ -615,6 +624,7 @@ function Demo() {
           });
         } catch (error) {
           this.log(`Error processing offer: ${error.message}`);
+          setIsGenerating(false);
           setIsConnecting(false);
           setConnectionStatus("failed");
           throw error;
@@ -753,18 +763,42 @@ function Demo() {
       return text;
     } catch (err) {
       console.error("Failed to read clipboard contents:", err);
-      alert("Clipboard access failed. Make sure the website has permission to access clipboard.");
-      return false;
+      console.log("Showing manual paste modal");
+      return new Promise((resolve) => {
+        console.log("Setting paste resolver");
+        pasteResolverRef.current = resolve;
+        setShowManualPaste(true);
+      });
+    }
+  };
+  
+  const handleManualPasteComplete = (text) => {
+    console.log("Manual paste completed with text:", text);
+    setShowManualPaste(false);
+    setPasteText("");
+    if (pasteResolverRef.current) {
+      console.log("Resolving promise with text:", text);
+      pasteResolverRef.current(text);
+      pasteResolverRef.current = null;
+    } else {
+      console.log("No paste resolver found!");
+    }
+  };
+  
+  const handleManualPasteCancel = () => {
+    setShowManualPaste(false);
+    setPasteText("");
+    if (pasteResolverRef.current) {
+      pasteResolverRef.current("");
+      pasteResolverRef.current = null;
     }
   };
 
   const handlecopy = async (text) => {
     console.log("copying...")
     try {
-      // Ensure the document is focused before attempting to copy
       if (document.hasFocus && !document.hasFocus()) {
         window.focus();
-        // Wait a bit for focus to be established
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       
@@ -773,7 +807,8 @@ function Demo() {
       return true;
     } catch (err) {
       console.error('Failed to copy text: ', err);
-      alert("Clipboard access failed. Make sure the website has permission to access clipboard. Copy the text manually from the console at the end of the page.");
+      setGeneratedText(text);
+      setShowManualCopy(true);
       return false;
     }
   }
@@ -800,7 +835,13 @@ function Demo() {
   const [connectionStatus, setConnectionStatus] = useState("disconnected");
   const [transferProgress, setTransferProgress] = useState({});
   const [transferSpeed, setTransferSpeed] = useState({});
-  const [isConnecting, setIsConnecting] = useState(false); // zaruri hai stoprage ke for global scope
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [showManualCopy, setShowManualCopy] = useState(false);
+  const [showManualPaste, setShowManualPaste] = useState(false);
+  const [generatedText, setGeneratedText] = useState("");
+  const [pasteText, setPasteText] = useState("");
+  const pasteResolverRef = useRef(null); // zaruri hai stoprage ke for global scope
   const log = (msg) => {
     const container = document.getElementById('dbugconsole');
     const para = document.createElement('p');
@@ -917,6 +958,7 @@ function Demo() {
           {step === 0 ? <Button text="Copy Connection Chunk" onClick={async () => {
             const desc = await weaveclass.create();
             const copied = await handlecopy(desc);
+            setstep(1); // Always update step regardless of clipboard success
             if (!copied){
               setNotif(null);
               setTimeout(() => {
@@ -924,7 +966,6 @@ function Demo() {
                 }, 100);
               return;
             }
-            setstep(1);
             setNotif(null);
                 setTimeout(() => {
                 setNotif({ title: "Copied Successfully!", body: "Share the link in your clipboard with the receiver." });
@@ -959,7 +1000,7 @@ function Demo() {
           {usertype === "sender" ? (step === 1 ? <Button text="Click to paste" onClick={async () => {
               const data = await handlepaste();
               
-              if (!data) {
+              if (!data || data.trim() === "") {
                 setNotif(null);
                 setTimeout(() => {
                   setNotif({ title: "Clipboard empty", body: "clipboard empty make sure the entire chunk is copied." });
@@ -977,22 +1018,12 @@ function Demo() {
                 return;
 
               } else if (result === 1) {
-                // alert("Pasted successfully! Wait a few seconds for connection to finalize");
-                console.log("here 1: " + step)
-                
-                console.log("here 2: " + step)
-                setstep(2);
-                setNotif(null);
                 setstep(2);
                 setconnectionstate("connected");
-                setstep(2);
                 setNotif(null);
                 setTimeout(() => {
                   setNotif({ title: "Pasted successfully!", body: "Wait a few seconds for connection to finalize." });
-                  setstep(2); // this works somehow i m too sleepy
                 }, 100);
-                setstep(2);
-                setstep(2); // i fucking dont get it fuck it
                 return;
                 
               } else if (result === -1) {
@@ -1023,9 +1054,13 @@ function Demo() {
         <div className="buttonsK">
           {step===0 ? <Button text="Paste Chunk" onClick={
             async () => {
-            // const localdesc = new weaveSender(log).create();
+            console.log("Receiver: Starting paste process");
             const senderoffer = await handlepaste();
-            if (!senderoffer) {
+            console.log("Receiver: Got paste result:", senderoffer);
+            console.log("Receiver: Paste result type:", typeof senderoffer);
+            console.log("Receiver: Paste result length:", senderoffer ? senderoffer.length : "null");
+            
+            if (!senderoffer || senderoffer.trim() === "") {
               setNotif(null);
               setTimeout(() => {
                 setNotif({ title: "Clipboard empty", body: "clipboard empty make sure the entire chunk is copied." });
@@ -1047,7 +1082,12 @@ function Demo() {
         <h4>Copy connection Chunk (Step: III)</h4>
         <p className="sectiondescK">Share this with the sender (this is a big chunk of text)</p>
         <div className="buttonsK">
-          {usertype === "sender" ? (step === 1 ? <Button text="Click to paste" onClick={async () => {setstep(2); await handlepaste();}} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
+          {usertype === "sender" ? (step === 1 ? <Button text="Click to paste" onClick={async () => {
+            const data = await handlepaste();
+            if (data && data.trim() !== "") {
+              setstep(2);
+            }
+          }} /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Pasted Successfully!" />)) : null}
           {usertype === "receiver" ? (step === 1 ? <Button text="Click to copy" onClick={async () => 
             {
               
@@ -1204,6 +1244,14 @@ function Demo() {
 
   return (
     <>
+      <style>
+        {`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}
+      </style>
       {/* <Header/> */}
       <main>
         {/* <Notif title="Dont paste your own chunk!" body="PASTE THE ONE THE RECEIVER SENT TO YOU!"/> */}
@@ -1237,6 +1285,198 @@ function Demo() {
                 }}></div>
                 <span>Connection: {connectionStatus}</span>
                 {isConnecting && <span style={{fontSize: '12px'}}>↺ Connecting...</span>}
+                {isGenerating && <span style={{fontSize: '12px'}}>⛭ Generating...</span>}
+              </div>
+            </div>
+          )}
+          
+          {isGenerating && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000
+            }}>
+              <div style={{
+                backgroundColor: 'white',
+                padding: '30px',
+                borderRadius: '10px',
+                textAlign: 'center',
+                maxWidth: '300px'
+              }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  border: '4px solid #f3f3f3',
+                  borderTop: '4px solid #3498db',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite',
+                  margin: '0 auto 20px'
+                }}></div>
+                <h3 style={{margin: '0 0 10px 0'}}>Generating Connection</h3>
+                <p style={{margin: '0', color: '#666'}}>Please wait while we establish the connection...</p>
+              </div>
+            </div>
+          )}
+          
+          {showManualCopy && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000
+            }}>
+              <div style={{
+                backgroundColor: 'white',
+                padding: '20px',
+                borderRadius: '10px',
+                maxWidth: '600px',
+                maxHeight: '80vh',
+                overflow: 'auto'
+              }}>
+                <h3 style={{margin: '0 0 15px 0'}}>Manual Copy Required</h3>
+                <p style={{margin: '0 0 15px 0', color: '#666'}}>
+                  Clipboard access was denied. Please select and copy the text below manually:
+                </p>
+                <textarea 
+                  value={generatedText}
+                  readOnly
+                  style={{
+                    width: '100%',
+                    height: '200px',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '5px',
+                    fontFamily: 'monospace',
+                    fontSize: '12px',
+                    resize: 'vertical'
+                  }}
+                  onClick={(e) => e.target.select()}
+                />
+                <div style={{marginTop: '15px', display: 'flex', gap: '10px'}}>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedText).then(() => {
+                        setShowManualCopy(false);
+                        setGeneratedText("");
+                      });
+                    }}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: '#4CAF50',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Try Copy Again
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowManualCopy(false);
+                      setGeneratedText("");
+                    }}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: '#f44336',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {showManualPaste && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000
+            }}>
+              <div style={{
+                backgroundColor: 'white',
+                padding: '20px',
+                borderRadius: '10px',
+                maxWidth: '600px',
+                maxHeight: '80vh',
+                overflow: 'auto'
+              }}>
+                <h3 style={{margin: '0 0 15px 0'}}>Manual Paste Required</h3>
+                <p style={{margin: '0 0 15px 0', color: '#666'}}>
+                  Clipboard access was denied. Please paste the text manually in the field below:
+                </p>
+                <textarea 
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder="Paste the connection text here..."
+                  style={{
+                    width: '100%',
+                    height: '200px',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '5px',
+                    fontFamily: 'monospace',
+                    fontSize: '12px',
+                    resize: 'vertical'
+                  }}
+                />
+                <div style={{marginTop: '15px', display: 'flex', gap: '10px'}}>
+                  <button 
+                    onClick={() => {
+                      if (pasteText.trim()) {
+                        handleManualPasteComplete(pasteText.trim());
+                      }
+                    }}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: '#4CAF50',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Use This Text
+                  </button>
+                  <button 
+                    onClick={handleManualPasteCancel}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: '#f44336',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           )}
