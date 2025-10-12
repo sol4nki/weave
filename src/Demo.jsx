@@ -10,6 +10,337 @@ import './Demo.css'
 import Notif from './components/Notif'
 
 function Demo() {
+
+  // sab kuch yahan hi dal raha cause no way i m working with global vars and states
+  class weaveSender {
+    constructor(log) {
+      this.log = log;
+      this.usertype = "sender"
+      this.lc = new RTCPeerConnection({
+        iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun.l.google.com:5349" },
+            { urls: "stun:stun1.l.google.com:3478" },
+            { urls: "stun:stun1.l.google.com:5349" },
+            { urls: "stun:stun2.l.google.com:19302" },
+            { urls: "stun:stun2.l.google.com:5349" },
+            { urls: "stun:stun3.l.google.com:3478" },
+            { urls: "stun:stun3.l.google.com:5349" },
+            { urls: "stun:stun4.l.google.com:19302" },
+            { urls: "stun:stun4.l.google.com:5349" }
+        ]
+      });
+      this.dc = this.lc.createDataChannel("channel")
+      this.dc.onmessage = e => this.log("Recieved: " + e.data)
+      this.dc.onopen = e => this.log("Sender: connection open " + e.data)
+      this.incomingFile = null;
+      this.receivedBuffers = [];
+      this.lc.ondatachannel = e => {
+        this.dc = e.channel;
+
+        this.dc.onmessage = event => {
+          if (typeof event.data === "string") {
+            try {
+              const msg = JSON.parse(event.data);
+              if (msg.type === "file-meta") {
+                this.incomingFile = { name: msg.name, size: msg.size, mime: msg.mime };
+                this.receivedBuffers = [];
+                this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
+              } else if (msg.type === "file-end") {
+                const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = this.incomingFile.name;
+                a.textContent = `Download ${this.incomingFile.name}`;
+                document.getElementById("dbugconsole").appendChild(a);
+                this.log(`File received: ${this.incomingFile.name}`);
+                setReceivedFiles(prev => [...prev, this.incomingFile]);
+                this.receivedBuffers = [];
+                this.incomingFile = null;
+              } else {
+                this.log("Received: " + event.data);
+              }
+            } catch {
+              this.log("Received message: " + event.data);
+            }
+          } else {
+            // Binary chunk
+            this.receivedBuffers.push(event.data);
+          }
+        };
+
+        this.dc.onopen = () => this.log("Receiver: connection open!");
+      };
+      // log(this.lc.localDescription)
+    }
+    
+    async create() {
+      if (this.lc.localDescription) {
+        this.log("Offer already created.");
+        return JSON.stringify(this.lc.localDescription);
+      }
+      return new Promise(async (resolve) => {
+        this.lc.onicecandidate = e => {
+          if (e.candidate === null) {
+            this.log("Final offer with ICE: " + JSON.stringify(this.lc.localDescription));
+            resolve(JSON.stringify(this.lc.localDescription));  // bhai ice kaam nhi kr raha
+          }
+        };
+        const offer = await this.lc.createOffer();
+        await this.lc.setLocalDescription(offer);
+      });
+    }
+
+
+
+    senddata(data) {
+      if (this.dc && this.dc.readyState === "open") {
+        this.dc.send(data);
+        this.log("sent: " + data);
+      } else {
+        this.log("DataChannel not open yet! State: " + (this.dc?.readyState || 'null'));
+      }
+    }
+
+    async answerofreceiver(answer=null) {
+      
+      if (answer){
+        if ( JSON.parse(answer).type === this.lc.localDescription.type &&
+            JSON.parse(answer).sdp === this.lc.localDescription.sdp ){
+          this.log("!! Bro this is your own description, paste the one the receiver sent you damn it, read the guide dude")
+          return 0
+        }
+        await this.lc.setRemoteDescription(JSON.parse(answer))
+        this.log("new connection created finalized")
+
+        return 1
+        } 
+        return -1
+    } 
+
+    sendFile(file) {
+      const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
+      const reader = new FileReader();
+      const dc = this.dc;
+      const log = this.log;
+
+      if (!dc || dc.readyState !== "open") {
+        log("DataChannel not open yet! State: " + (dc?.readyState || 'null'));
+        return;
+      }
+      reader.onload = async (event) => {
+        const buffer = event.target.result;
+        log(`Sending file: ${file.name} (${buffer.byteLength} bytes)`);
+
+        dc.send(JSON.stringify({
+          type: "file-meta",
+          name: file.name,
+          size: buffer.byteLength,
+          mime: file.type || "application/octet-stream"
+        }));
+
+        for (let offset = 0; offset < buffer.byteLength; offset += chunkSize) {
+          const chunk = buffer.slice(offset, offset + chunkSize);
+          console.log(chunk);
+          dc.send(chunk); // yahan pe add karna hai hASH of the data
+          await new Promise(r => setTimeout(r, 10)); 
+        }
+
+        dc.send(JSON.stringify({ type: "file-end", name: file.name }));
+        log(`File sent successfully: ${file.name}`);
+        setSentFilesxyz(prev => [...prev, file]);
+        setTimeout(() => {
+          setSendFiles(prev => prev.filter(f => f.name !== file.name));
+        }, 500);
+      };
+
+      reader.readAsArrayBuffer(file.file);
+    }
+
+
+  }
+
+
+  class weaveReceiver {
+    constructor(log) {
+      this.log = log;
+      this.usertype = "receiver";
+      this.rc = new RTCPeerConnection({
+        iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun.l.google.com:5349" },
+            { urls: "stun:stun1.l.google.com:3478" },
+            { urls: "stun:stun1.l.google.com:5349" },
+            { urls: "stun:stun2.l.google.com:19302" },
+            { urls: "stun:stun2.l.google.com:5349" },
+            { urls: "stun:stun3.l.google.com:3478" },
+            { urls: "stun:stun3.l.google.com:5349" },
+            { urls: "stun:stun4.l.google.com:19302" },
+            { urls: "stun:stun4.l.google.com:5349" }
+        ]
+      });
+
+      this.rc.onicecandidate = () => this.log("new icecandidate" + JSON.stringify(this.rc.localDescription));
+      this.rc.ondatachannel = e => {
+        this.rc.dc = e.channel
+        this.rc.dc.onmessage = e => this.log("Recieved: " + e.data)
+        this.rc.dc.onopen = e => this.log("Receiver: connection open!")
+      }
+      this.incomingFile = null;
+      this.receivedBuffers = [];
+
+      // receive wala logic (function ki zarurat nhi cause obviously open data channel pe aa raha hai toh process hojayega khud hi)
+      this.rc.ondatachannel = e => {
+        this.rc.dc = e.channel;
+
+        this.rc.dc.onmessage = event => {
+          if (typeof event.data === "string") {
+            try {
+              const msg = JSON.parse(event.data);
+              if (msg.type === "file-meta") {
+                this.incomingFile = { name: msg.name, size: msg.size, mime: msg.mime };
+                this.receivedBuffers = [];
+                this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
+              } else if (msg.type === "file-end") {
+                const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = this.incomingFile.name;
+                a.textContent = `Download ${this.incomingFile.name}`;
+                document.getElementById("dbugconsole").appendChild(a);
+                this.log(`File received: ${this.incomingFile.name}`);
+
+                setReceivedFiles(prev => [...prev, this.incomingFile]);
+                console.log(this.incomingFile);
+                this.receivedBuffers = [];
+                this.incomingFile = null;
+              } else {
+                this.log("Received: " + event.data);
+              }
+            } catch {
+              this.log("Received message: " + event.data);
+            }
+          } else {
+            // Binary chunk
+            this.receivedBuffers.push(event.data);
+          }
+        };
+
+        this.rc.dc.onopen = () => this.log("Receiver: connection open!");
+      };
+      // console.log(this.rc.localDescription) 
+    }
+    
+    senddata(data) {
+      if (this.rc.dc && this.rc.dc.readyState === "open") {
+        this.rc.dc.send(data);
+        this.log("sent: " + data);
+      } else {
+        this.log("DataChannel not open yet! State: " + (this.rc.dc?.readyState || 'null'));
+      }
+    }
+
+    async offerbysender(offer = null) {
+      if (offer) {
+        await this.rc.setRemoteDescription(offer);
+        const answer = await this.rc.createAnswer();
+        await this.rc.setLocalDescription(answer);
+        // this.log("Full answer SDP:", answer);
+
+        return new Promise((resolve) => {
+          this.rc.onicecandidate = e => {
+            if (e.candidate === null) {
+              this.log("Receiver: answer ready");
+              resolve(this.rc.localDescription);
+              this.log(JSON.stringify(this.rc.localDescription)); // kuch kaanm nhi kar raha yaar FFF
+            }
+          };
+        });
+      }
+    }
+    // wahi open data channel wali baat wapis L
+    sendFile(file) {
+      const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
+      const reader = new FileReader();
+      const dc = this.rc.dc;
+      const log = this.log;
+
+      reader.onload = async (event) => {
+        const buffer = event.target.result;
+        log(`Sending file: ${file.name} (${buffer.byteLength} bytes)`);
+
+        dc.send(JSON.stringify({
+          type: "file-meta",
+          name: file.name,
+          size: buffer.byteLength,
+          mime: file.type || "application/octet-stream"
+        }));
+
+        for (let offset = 0; offset < buffer.byteLength; offset += chunkSize) {
+          const chunk = buffer.slice(offset, offset + chunkSize);
+          dc.send(chunk);
+          await new Promise(r => setTimeout(r, 10)); 
+        }
+
+        dc.send(JSON.stringify({ type: "file-end", name: file.name }));
+        log(`File sent successfully: ${file.name}`);
+        setSentFilesxyz(prev => [...prev, file.file]);
+        setTimeout(() => {
+          setSendFiles(prev => prev.filter(f => f.name !== file.name));
+        }, 500);
+      };
+      
+
+      reader.readAsArrayBuffer(file.file);
+    }
+
+
+
+  }
+
+
+  const handlepaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      console.log("Pasted text: ", text);
+      return text;
+    } catch (err) {
+      console.error("Failed to read clipboard contents:", err);
+      alert("Clipboard access failed. Make sure the website has permission to access clipboard.");
+      return false;
+    }
+  };
+
+  const handlecopy = async (text) => {
+    console.log("copying...")
+    try {
+      await navigator.clipboard.writeText(text);
+      console.log('Text copied to clipboard: ' + text);
+      return true;
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+      alert("Clipboard access failed. Make sure the website has permission to access clipboard. Copy the text manually from the console at the end of the page.");
+      return false;
+    }
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   const [connectionstate, setconnectionstate] = useState("disconnected");
   const [usertype, setusertype] = useState(null);
   const [step, setstep] = useState(0);
@@ -32,20 +363,20 @@ function Demo() {
   // file wala part yahan daal raha hu  filesxyz filexyz files (for easy search)
 
   const [sendFiles, setSendFiles] = useState([]);
+  const [receivedFiles, setReceivedFiles] = useState([]);
+  const [sentFilesxyz, setSentFilesxyz] = useState([]);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     const fileInput = fileInputRef.current;
     if (fileInput) {
       fileInput.addEventListener('change', handleFiles);
-      
     }
 
     // cleanup to avoid memory leaks
     return () => {
       
       if (fileInput) {
-        
         fileInput.removeEventListener('change', handleFiles);
       }
     };
@@ -69,7 +400,7 @@ function Demo() {
           name: files[i].name,
           size: files[i].size,
           type: 'sending',
-          key: Date.now() + i, // HAHAHA HAHAHA HAHAHA
+          key: Math.random().toString(36).substring(2, 10) + i, // HAHAHA HAHAHA HAHAHA
         });
       }
 
@@ -314,6 +645,7 @@ function Demo() {
           className="hiddenInput"
           id = "fileInput"
           ref={fileInputRef}
+          onChange={handleFiles}
         />
         <div className="dropZoneContent">
           <p>Drag and Drop or Click to upload</p>
@@ -344,6 +676,13 @@ function Demo() {
       <p style={{fontWeight: 'bold', minWidth: '100px'}}>Sent : </p>
       <div className="filebufferarray" id="sentfiles">
         {/* <Filecard name="file1.txt" num="0" type="done" /> */}
+        {sentFilesxyz.length > 0 ? (
+            sentFilesxyz.map((file, index) => (
+              <Filecard key={file.name + Math.random().toString(36).substring(2, 10)} name={file.name} num={index+1} type={"done"} size={file.size}/>
+            ))
+          ) : (
+            <p>No files sent yet.</p>
+          )}
       </div>
 
     </div>
@@ -352,8 +691,16 @@ function Demo() {
       <h2 className="sectiontitleK">Received Files</h2>
       <p className="sectionsubK">Click on the file received to download</p>
       <p style={{fontWeight: 'bold', minWidth: '100px'}}>Received : </p>
-      <div className="filebufferarray" id="sentfiles">
-        <Filecard name="file1.txt" num="0" type="done" />
+      <div className="filebufferarray" id="receivedfiles">
+        {/* <Filecard name="file1.txt" num="0" type="done" /> */}
+        {receivedFiles.length > 0 ? (
+            receivedFiles?.map((file, index) => {
+              if (!file) return null;
+              return <Filecard key={file.name + Math.random().toString(36).substring(2, 10)} name={file.name} num={index+1} type={"received"} size={file.size}/>;
+            })
+          ) : (
+            <p>No files received yet.</p>
+          )}
         
       </div>
     </div>
@@ -423,303 +770,6 @@ function Demo() {
     </>
   )
 }
-
-class weaveSender {
-  constructor(log) {
-    this.log = log;
-    this.usertype = "sender"
-    this.lc = new RTCPeerConnection({
-      iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun.l.google.com:5349" },
-          { urls: "stun:stun1.l.google.com:3478" },
-          { urls: "stun:stun1.l.google.com:5349" },
-          { urls: "stun:stun2.l.google.com:19302" },
-          { urls: "stun:stun2.l.google.com:5349" },
-          { urls: "stun:stun3.l.google.com:3478" },
-          { urls: "stun:stun3.l.google.com:5349" },
-          { urls: "stun:stun4.l.google.com:19302" },
-          { urls: "stun:stun4.l.google.com:5349" }
-      ]
-    });
-    this.dc = this.lc.createDataChannel("channel")
-    this.dc.onmessage = e => this.log("Recieved: " + e.data)
-    this.dc.onopen = e => this.log("Sender: connection open " + e.data)
-    this.incomingFile = null;
-    this.receivedBuffers = [];
-    this.lc.ondatachannel = e => {
-      this.dc = e.channel;
-
-      this.dc.onmessage = event => {
-        if (typeof event.data === "string") {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === "file-meta") {
-              this.incomingFile = { name: msg.name, size: msg.size, mime: msg.mime };
-              this.receivedBuffers = [];
-              this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
-            } else if (msg.type === "file-end") {
-              const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = this.incomingFile.name;
-              a.textContent = `Download ${this.incomingFile.name}`;
-              document.getElementById("dbugconsole").appendChild(a);
-              this.log(`File received: ${this.incomingFile.name}`);
-              this.receivedBuffers = [];
-              this.incomingFile = null;
-            } else {
-              this.log("Received: " + event.data);
-            }
-          } catch {
-            this.log("Received message: " + event.data);
-          }
-        } else {
-          // Binary chunk
-          this.receivedBuffers.push(event.data);
-        }
-      };
-
-      this.dc.onopen = () => this.log("Receiver: connection open!");
-    };
-    // log(this.lc.localDescription)
-  }
-  
-  async create() {
-    if (this.lc.localDescription) {
-      this.log("Offer already created.");
-      return JSON.stringify(this.lc.localDescription);
-    }
-    return new Promise(async (resolve) => {
-      this.lc.onicecandidate = e => {
-        if (e.candidate === null) {
-          this.log("Final offer with ICE: " + JSON.stringify(this.lc.localDescription));
-          resolve(JSON.stringify(this.lc.localDescription));  // bhai ice kaam nhi kr raha
-        }
-      };
-      const offer = await this.lc.createOffer();
-      await this.lc.setLocalDescription(offer);
-    });
-  }
-
-
-
-  senddata(data) {
-    if (this.dc && this.dc.readyState === "open") {
-      this.dc.send(data);
-      this.log("sent: " + data);
-    } else {
-      this.log("DataChannel not open yet! State: " + (this.dc?.readyState || 'null'));
-    }
-  }
-
-  async answerofreceiver(answer=null) {
-    
-    if (answer){
-      if ( JSON.parse(answer).type === this.lc.localDescription.type &&
-           JSON.parse(answer).sdp === this.lc.localDescription.sdp ){
-        this.log("!! Bro this is your own description, paste the one the receiver sent you damn it, read the guide dude")
-        return 0
-      }
-      await this.lc.setRemoteDescription(JSON.parse(answer))
-      this.log("new connection created finalized")
-
-      return 1
-      } 
-      return -1
-  } 
-
-  sendFile(file) {
-    const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
-    const reader = new FileReader();
-    const dc = this.dc;
-    const log = this.log;
-
-    reader.onload = async (event) => {
-      const buffer = event.target.result;
-      log(`Sending file: ${file.name} (${buffer.byteLength} bytes)`);
-
-      dc.send(JSON.stringify({
-        type: "file-meta",
-        name: file.name,
-        size: buffer.byteLength,
-        mime: file.type || "application/octet-stream"
-      }));
-
-      for (let offset = 0; offset < buffer.byteLength; offset += chunkSize) {
-        const chunk = buffer.slice(offset, offset + chunkSize);
-        dc.send(chunk);
-        await new Promise(r => setTimeout(r, 10)); 
-      }
-
-      dc.send(JSON.stringify({ type: "file-end", name: file.name }));
-      log(`File sent successfully: ${file.name}`);
-    };
-
-    reader.readAsArrayBuffer(file.file);
-  }
-
-
-}
-
-
-class weaveReceiver {
-  constructor(log) {
-    this.log = log;
-    this.usertype = "receiver";
-    this.rc = new RTCPeerConnection({
-      iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun.l.google.com:5349" },
-          { urls: "stun:stun1.l.google.com:3478" },
-          { urls: "stun:stun1.l.google.com:5349" },
-          { urls: "stun:stun2.l.google.com:19302" },
-          { urls: "stun:stun2.l.google.com:5349" },
-          { urls: "stun:stun3.l.google.com:3478" },
-          { urls: "stun:stun3.l.google.com:5349" },
-          { urls: "stun:stun4.l.google.com:19302" },
-          { urls: "stun:stun4.l.google.com:5349" }
-      ]
-    });
-
-    this.rc.onicecandidate = () => this.log("new icecandidate" + JSON.stringify(this.rc.localDescription));
-    this.rc.ondatachannel = e => {
-      this.rc.dc = e.channel
-      this.rc.dc.onmessage = e => this.log("Recieved: " + e.data)
-      this.rc.dc.onopen = e => this.log("Receiver: connection open!")
-    }
-    this.incomingFile = null;
-    this.receivedBuffers = [];
-
-    // receive wala logic (function ki zarurat nhi cause obviously open data channel pe aa raha hai toh process hojayega khud hi)
-    this.rc.ondatachannel = e => {
-      this.rc.dc = e.channel;
-
-      this.rc.dc.onmessage = event => {
-        if (typeof event.data === "string") {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === "file-meta") {
-              this.incomingFile = { name: msg.name, size: msg.size, mime: msg.mime };
-              this.receivedBuffers = [];
-              this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
-            } else if (msg.type === "file-end") {
-              const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = this.incomingFile.name;
-              a.textContent = `Download ${this.incomingFile.name}`;
-              document.getElementById("dbugconsole").appendChild(a);
-              this.log(`File received: ${this.incomingFile.name}`);
-              this.receivedBuffers = [];
-              this.incomingFile = null;
-            } else {
-              this.log("Received: " + event.data);
-            }
-          } catch {
-            this.log("Received message: " + event.data);
-          }
-        } else {
-          // Binary chunk
-          this.receivedBuffers.push(event.data);
-        }
-      };
-
-      this.rc.dc.onopen = () => this.log("Receiver: connection open!");
-    };
-    // console.log(this.rc.localDescription) 
-  }
-  
-  senddata(data) {
-    if (this.rc.dc && this.rc.dc.readyState === "open") {
-      this.rc.dc.send(data);
-      this.log("sent: " + data);
-    } else {
-      this.log("DataChannel not open yet! State: " + (this.rc.dc?.readyState || 'null'));
-    }
-  }
-
-  async offerbysender(offer = null) {
-    if (offer) {
-      await this.rc.setRemoteDescription(offer);
-      const answer = await this.rc.createAnswer();
-      await this.rc.setLocalDescription(answer);
-      // this.log("Full answer SDP:", answer);
-
-      return new Promise((resolve) => {
-        this.rc.onicecandidate = e => {
-          if (e.candidate === null) {
-            this.log("Receiver: answer ready");
-            resolve(this.rc.localDescription);
-            this.log(JSON.stringify(this.rc.localDescription)); // kuch kaanm nhi kar raha yaar FFF
-          }
-        };
-      });
-    }
-  }
-  // wahi open data channel wali baat wapis L
-  sendFile(file) {
-    const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
-    const reader = new FileReader();
-    const dc = this.dc;
-    const log = this.log;
-
-    reader.onload = async (event) => {
-      const buffer = event.target.result;
-      log(`Sending file: ${file.name} (${buffer.byteLength} bytes)`);
-
-      dc.send(JSON.stringify({
-        type: "file-meta",
-        name: file.name,
-        size: buffer.byteLength,
-        mime: file.type || "application/octet-stream"
-      }));
-
-      for (let offset = 0; offset < buffer.byteLength; offset += chunkSize) {
-        const chunk = buffer.slice(offset, offset + chunkSize);
-        dc.send(chunk);
-        await new Promise(r => setTimeout(r, 10)); 
-      }
-
-      dc.send(JSON.stringify({ type: "file-end", name: file.name }));
-      log(`File sent successfully: ${file.name}`);
-    };
-
-    reader.readAsArrayBuffer(file.file);
-  }
-
-
-
-}
-
-
-const handlepaste = async () => {
-  try {
-    const text = await navigator.clipboard.readText();
-    console.log("Pasted text: ", text);
-    return text;
-  } catch (err) {
-    console.error("Failed to read clipboard contents:", err);
-    alert("Clipboard access failed. Make sure the website has permission to access clipboard.");
-    return false;
-  }
-};
-
-const handlecopy = async (text) => {
-  console.log("copying...")
-  try {
-    await navigator.clipboard.writeText(text);
-    console.log('Text copied to clipboard: ' + text);
-    return true;
-  } catch (err) {
-    console.error('Failed to copy text: ', err);
-    alert("Clipboard access failed. Make sure the website has permission to access clipboard. Copy the text manually from the console at the end of the page.");
-    return false;
-  }
-}
-
 
 
 

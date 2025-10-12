@@ -11,7 +11,7 @@ export default function Filecard({num="1", name="file_name", type="upload", size
           {
           size >= 1024 * 1024
             ? `${(size / (1024 * 1024)).toFixed(2)}Mb`
-            : `${size}bytes`
+            : (size < 1024) ? `${size}bytes` : `${(size / 1024).toFixed(2)}Kb`
           }
         </span>
         {/* <p>{type}</p> */}
