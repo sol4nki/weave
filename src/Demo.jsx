@@ -1098,22 +1098,51 @@ function Demo() {
                 if (!copied){
                   setNotif(null);
                   setTimeout(() => {
-                    setNotif({ title: "FAILED COPYING!", body: "Copy the text manually from the console at the end of the page." });
+                    setNotif({ title: "FAILED COPYING!", body: "Copy the text manually from the popup menu." });
                     }, 100);
                   return;
                 }
-                setstep(2);
+                
                 setconnectionstate("connected");
                 setNotif(null);
                 setTimeout(() => {
                   setNotif({ title: "Copied Successfully!", body: "Share the chunk in your clipboard with the sender." });
+                  setstep(2);
                 }, 100);
                 return;
 
               }
 
             }} 
-            /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Copied Successfully!" />)) : null}
+            /> : (step === 0 ? <Buttonwhite text="Complete Previous Step!" /> : <Buttonwhite text="Copied Successfully!" onClick={async () => 
+            {
+              
+              if (senderOffer){
+                console.log("Received offer from clipboard:", senderOffer);
+                const reply = await weaveclass.offerbysender(JSON.parse(senderOffer));
+                
+                const copied = await handlecopy(JSON.stringify(reply));
+                if (!copied){
+                  setNotif(null);
+                  setTimeout(() => {
+                    setNotif({ title: "FAILED COPYING!", body: "Copy the text manually from the popup menu." });
+                    }, 100);
+                  return;
+                }
+                
+                setconnectionstate("connected");
+                setNotif(null);
+                setTimeout(() => {
+                  setNotif({ title: "Copied Successfully!", body: "Share the chunk in your clipboard with the sender." });
+                  setstep(2);
+                }, 100);
+                return;
+
+              }
+
+            }} 
+            
+            />)) : null}
         </div>
       </div>
     </div>
@@ -1379,6 +1408,7 @@ function Demo() {
                       navigator.clipboard.writeText(generatedText).then(() => {
                         setShowManualCopy(false);
                         setGeneratedText("");
+                        setstep(2); // yaar mai nhi check kar raha baar baar aab steps i m tired
                       });
                     }}
                     style={{
@@ -1396,6 +1426,7 @@ function Demo() {
                     onClick={() => {
                       setShowManualCopy(false);
                       setGeneratedText("");
+                      setstep(2); // yaar mai nhi check kar raha baar baar aab steps i m tired
                     }}
                     style={{
                       padding: '10px 20px',
