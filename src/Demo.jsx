@@ -16,37 +16,56 @@ function Demo() {
     constructor(log) {
       this.log = log;
       this.usertype = "sender";
+      this.iceServers = [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:3478" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:3478" },
+        { urls: "stun:stun4.l.google.com:19302" },
+        { 
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        { 
+          urls: "turn:openrelay.metered.ca:443",
+          username: "openrelayproject", 
+          credential: "openrelayproject"
+        },
+        { 
+          urls: "turn:openrelay.metered.ca:443?transport=tcp",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        { 
+          urls: "turn:relay.metered.ca:80",
+          username: "87e4c4b4b2b4b4b4",
+          credential: "87e4c4b4b2b4b4b4"
+        },
+        { 
+          urls: "turn:relay.metered.ca:443",
+          username: "87e4c4b4b2b4b4b4",
+          credential: "87e4c4b4b2b4b4b4"
+        }
+      ];
+      
+      this.currentIceServerIndex = 0;
+      this.retryCount = 0;
+      this.maxRetries = 3;
+      
       this.lc = new RTCPeerConnection({
-        iceServers: [
-          // STUN servers for local network discovery
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:3478" },
-          { urls: "stun:stun2.l.google.com:19302" },
-          { urls: "stun:stun3.l.google.com:3478" },
-          { urls: "stun:stun4.l.google.com:19302" },
-          // TURN servers for cross-network connectivity
-          { 
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          },
-          { 
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject", 
-            credential: "openrelayproject"
-          },
-          { 
-            urls: "turn:openrelay.metered.ca:443?transport=tcp",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          }
-        ],
+        iceServers: this.iceServers,
         iceCandidatePoolSize: 10
       });
 
       this.dc = this.lc.createDataChannel("channel");
       this.chunks = [];
       this.receivedBuffers = [];
+      
+      // Track states to prevent log spam
+      this.lastIceGatheringState = null;
+      this.lastConnectionState = null;
+      this.lastIceConnectionState = null;
 
       this.dc.onmessage = async (event) => {
         if (typeof event.data === "string") {
@@ -86,7 +105,11 @@ function Demo() {
         }
       };
 
-      this.dc.onopen = (e) => this.log("Sender: connection open " + e.data);
+      this.dc.onopen = (e) => {
+        this.log("Sender: connection open " + e.data);
+        setConnectionStatus("connected");
+        setIsConnecting(false);
+      };
       this.incomingFile = null;
       this.lc.ondatachannel = (e) => {
         this.dc = e.channel;
@@ -123,7 +146,11 @@ function Demo() {
           }
         };
 
-        this.dc.onopen = () => this.log("Receiver: connection open!");
+        this.dc.onopen = () => {
+          this.log("Receiver: connection open!");
+          setConnectionStatus("connected");
+          setIsConnecting(false);
+        };
       };
       // log(this.lc.localDescription)
     }
@@ -133,13 +160,19 @@ function Demo() {
         this.log("Offer already created.");
         return JSON.stringify(this.lc.localDescription);
       }
+      
+      setIsConnecting(true);
+      setConnectionStatus("connecting");
+      
       return new Promise(async (resolve, reject) => {
         let iceGatheringComplete = false;
         let offerCreated = false;
         
-        // Set up ICE gathering state monitoring
         this.lc.onicegatheringstatechange = () => {
-          this.log(`ICE gathering state: ${this.lc.iceGatheringState}`);
+          if (this.lastIceGatheringState !== this.lc.iceGatheringState) {
+            this.log(`ICE gathering state: ${this.lc.iceGatheringState}`);
+            this.lastIceGatheringState = this.lc.iceGatheringState;
+          }
           if (this.lc.iceGatheringState === 'complete' && offerCreated) {
             iceGatheringComplete = true;
             this.log("ICE gathering completed - final offer ready");
@@ -147,7 +180,6 @@ function Demo() {
           }
         };
 
-        // Set up ICE candidate handling
         this.lc.onicecandidate = (e) => {
           if (e.candidate) {
             this.log(`ICE candidate: ${e.candidate.candidate}`);
@@ -161,11 +193,15 @@ function Demo() {
           }
         };
 
-        // Set up connection state monitoring
         this.lc.onconnectionstatechange = () => {
-          this.log(`Connection state: ${this.lc.connectionState}`);
+          if (this.lastConnectionState !== this.lc.connectionState) {
+            this.log(`Connection state: ${this.lc.connectionState}`);
+            this.lastConnectionState = this.lc.connectionState;
+            setConnectionStatus(this.lc.connectionState);
+          }
           if (this.lc.connectionState === 'failed') {
-            this.log("Connection failed - check network connectivity");
+            this.log("Connection failed - attempting retry...");
+            this.handleConnectionFailure();
           }
         };
 
@@ -175,19 +211,49 @@ function Demo() {
           offerCreated = true;
           this.log("Offer created, gathering ICE candidates...");
           
-          // Fallback timeout in case ICE gathering doesn't complete
           setTimeout(() => {
             if (!iceGatheringComplete) {
               this.log("ICE gathering timeout - using offer without complete ICE");
               resolve(JSON.stringify(this.lc.localDescription));
             }
-          }, 10000); // 10 second timeout
+          }, 10000);
           
         } catch (error) {
           this.log(`Error creating offer: ${error.message}`);
+          setIsConnecting(false);
+          setConnectionStatus("failed");
           reject(error);
         }
       });
+    }
+    
+    handleConnectionFailure() {
+      if (this.retryCount < this.maxRetries) {
+        this.retryCount++;
+        this.log(`Retrying connection (attempt ${this.retryCount}/${this.maxRetries})...`);
+        
+        setTimeout(() => {
+          this.currentIceServerIndex = (this.currentIceServerIndex + 1) % this.iceServers.length;
+          this.lc = new RTCPeerConnection({
+            iceServers: [this.iceServers[this.currentIceServerIndex]],
+            iceCandidatePoolSize: 10
+          });
+          this.setupConnectionHandlers();
+        }, 2000);
+      } else {
+        this.log("Max retries reached. Connection failed.");
+        setIsConnecting(false);
+        setConnectionStatus("failed");
+      }
+    }
+    
+    setupConnectionHandlers() {
+      this.dc = this.lc.createDataChannel("channel");
+      this.dc.onopen = (e) => {
+        this.log("Sender: connection open " + e.data);
+        setConnectionStatus("connected");
+        setIsConnecting(false);
+      };
     }
 
     senddata(data) {
@@ -219,7 +285,10 @@ function Demo() {
           
           // Monitor connection state
           this.lc.onconnectionstatechange = () => {
-            this.log(`Connection state: ${this.lc.connectionState}`);
+            if (this.lastConnectionState !== this.lc.connectionState) {
+              this.log(`Connection state: ${this.lc.connectionState}`);
+              this.lastConnectionState = this.lc.connectionState;
+            }
             if (this.lc.connectionState === 'connected') {
               this.log("Connection established successfully!");
             } else if (this.lc.connectionState === 'failed') {
@@ -229,7 +298,10 @@ function Demo() {
 
           // Monitor ICE connection state
           this.lc.oniceconnectionstatechange = () => {
-            this.log(`ICE connection state: ${this.lc.iceConnectionState}`);
+            if (this.lastIceConnectionState !== this.lc.iceConnectionState) {
+              this.log(`ICE connection state: ${this.lc.iceConnectionState}`);
+              this.lastIceConnectionState = this.lc.iceConnectionState;
+            }
             if (this.lc.iceConnectionState === 'failed') {
               this.log("ICE connection failed - this usually means network connectivity issues");
             }
@@ -258,6 +330,10 @@ function Demo() {
 
       reader.onload = async (event) => {
         const buffer = event.target.result;
+        const fileId = file.name + Date.now();
+        const startTime = Date.now();
+        let bytesSent = 0;
+        
         log(`Sending file: ${file.name} (${buffer.byteLength} bytes)`);
 
         dc.send(
@@ -272,6 +348,11 @@ function Demo() {
         const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
         this.chunks = new Array(totalChunks);
 
+        setTransferProgress(prev => ({
+          ...prev,
+          [fileId]: { current: 0, total: totalChunks, fileName: file.name }
+        }));
+
         for (let i = 0; i < totalChunks; i++) {
           const chunk = buffer.slice(i * chunkSize, (i + 1) * chunkSize);
           this.chunks[i] = chunk;
@@ -279,7 +360,6 @@ function Demo() {
           const hashArray = Array.from(new Uint8Array(hashBuffer));
           const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 
-          // bss metadata
           dc.send(
             JSON.stringify({
               type: "file-chunk-meta",
@@ -289,8 +369,21 @@ function Demo() {
           );
 
           dc.send(chunk);
+          bytesSent += chunk.byteLength;
+          
+          const elapsed = (Date.now() - startTime) / 1000;
+          const speed = bytesSent / elapsed;
+          
+          setTransferProgress(prev => ({
+            ...prev,
+            [fileId]: { current: i + 1, total: totalChunks, fileName: file.name }
+          }));
+          
+          setTransferSpeed(prev => ({
+            ...prev,
+            [fileId]: { speed: speed, bytesSent: bytesSent, totalBytes: buffer.byteLength }
+          }));
 
-          // dc.send(chunk); // yahan pe add karna hai hASH of the data
           await new Promise((r) => setTimeout(r, 10));
         }
 
@@ -299,6 +392,16 @@ function Demo() {
         setSentFilesxyz((prev) => [...prev, file]);
         setTimeout(() => {
           setSendFiles((prev) => prev.filter((f) => f.name !== file.name));
+          setTransferProgress(prev => {
+            const newProgress = { ...prev };
+            delete newProgress[fileId];
+            return newProgress;
+          });
+          setTransferSpeed(prev => {
+            const newSpeed = { ...prev };
+            delete newSpeed[fileId];
+            return newSpeed;
+          });
         }, 500);
       };
 
@@ -312,43 +415,68 @@ function Demo() {
     constructor(log) {
       this.log = log;
       this.usertype = "receiver";
+      this.iceServers = [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:3478" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:3478" },
+        { urls: "stun:stun4.l.google.com:19302" },
+        { 
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        { 
+          urls: "turn:openrelay.metered.ca:443",
+          username: "openrelayproject", 
+          credential: "openrelayproject"
+        },
+        { 
+          urls: "turn:openrelay.metered.ca:443?transport=tcp",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        { 
+          urls: "turn:relay.metered.ca:80",
+          username: "87e4c4b4b2b4b4b4",
+          credential: "87e4c4b4b2b4b4b4"
+        },
+        { 
+          urls: "turn:relay.metered.ca:443",
+          username: "87e4c4b4b2b4b4b4",
+          credential: "87e4c4b4b2b4b4b4"
+        }
+      ];
+      
+      this.currentIceServerIndex = 0;
+      this.retryCount = 0;
+      this.maxRetries = 3;
+      
       this.rc = new RTCPeerConnection({
-        iceServers: [
-          // STUN servers for local network discovery
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:3478" },
-          { urls: "stun:stun2.l.google.com:19302" },
-          { urls: "stun:stun3.l.google.com:3478" },
-          { urls: "stun:stun4.l.google.com:19302" },
-          // TURN servers for cross-network connectivity
-          { 
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          },
-          { 
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject", 
-            credential: "openrelayproject"
-          },
-          { 
-            urls: "turn:openrelay.metered.ca:443?transport=tcp",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          }
-        ],
+        iceServers: this.iceServers,
         iceCandidatePoolSize: 10
       });
 
-      this.rc.onicecandidate = () => this.log("new icecandidate" + JSON.stringify(this.rc.localDescription));
+      // Track states to prevent log spam
+      this.lastIceGatheringState = null;
+      this.lastConnectionState = null;
+      this.lastIceConnectionState = null;
+      
+      this.rc.onicecandidate = (e) => {
+        if (e.candidate) {
+          this.log(`New ICE candidate: ${e.candidate.candidate}`);
+        }
+      };
       this.incomingFile = null;
       this.receivedBuffers = [];
+      this.chunks = [];
+      this.pendingMeta = null;
 
       // receive wala logic (function ki zarurat nhi cause obviously open data channel pe aa raha hai toh process hojayega khud hi)
       this.rc.ondatachannel = e => {
         this.rc.dc = e.channel;
 
-        this.rc.dc.onmessage = event => {
+        this.rc.dc.onmessage = async (event) => {
           if (typeof event.data === "string") {
             try {
               const msg = JSON.parse(event.data);
@@ -356,6 +484,8 @@ function Demo() {
                 this.incomingFile = { name: msg.name, size: msg.size, mime: msg.mime };
                 this.receivedBuffers = [];
                 this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
+              } else if (msg.type === "file-chunk-meta") {
+                this.pendingMeta = msg;
               } else if (msg.type === "file-end") {
                 const blob = new Blob(this.receivedBuffers, { type: this.incomingFile.mime });
                 const url = URL.createObjectURL(blob);
@@ -370,19 +500,43 @@ function Demo() {
                 console.log(this.incomingFile);
                 this.receivedBuffers = [];
                 this.incomingFile = null;
+              } else if (msg.type === "retransmit-request") {
+                const chunk = this.chunks[msg.index];
+                if (chunk) this.rc.dc.send(chunk);
               } else {
                 this.log("Received: " + event.data);
               }
             } catch {
               this.log("Received message: " + event.data);
             }
+          } else if (this.pendingMeta) {
+            const chunk = event.data;
+            const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+            if (hashHex === this.pendingMeta.hash) {
+              this.receivedBuffers[this.pendingMeta.index] = chunk;
+              this.pendingMeta = null;
+            } else {
+              this.rc.dc.send(
+                JSON.stringify({
+                  type: "retransmit-request",
+                  index: this.pendingMeta.index,
+                })
+              );
+              console.warn("Chunk", this.pendingMeta.index, "failed hash check");
+            }
           } else {
-            // Binary chunk
             this.receivedBuffers.push(event.data);
           }
         };
 
-        this.rc.dc.onopen = () => this.log("Receiver: connection open!");
+        this.rc.dc.onopen = () => {
+          this.log("Receiver: connection open!");
+          setConnectionStatus("connected");
+          setIsConnecting(false);
+        };
       };
       // console.log(this.rc.localDescription) 
     }
@@ -400,6 +554,9 @@ function Demo() {
       if (offer) {
         const parsedOffer = typeof offer === "string" ? JSON.parse(offer) : offer;
         
+        setIsConnecting(true);
+        setConnectionStatus("connecting");
+        
         try {
           await this.rc.setRemoteDescription(new RTCSessionDescription(parsedOffer));
           this.log("Remote description set successfully");
@@ -411,9 +568,11 @@ function Demo() {
           return new Promise((resolve, reject) => {
             let iceGatheringComplete = false;
             
-            
             this.rc.onicegatheringstatechange = () => {
-              this.log(`ICE gathering state: ${this.rc.iceGatheringState}`);
+              if (this.lastIceGatheringState !== this.rc.iceGatheringState) {
+                this.log(`ICE gathering state: ${this.rc.iceGatheringState}`);
+                this.lastIceGatheringState = this.rc.iceGatheringState;
+              }
               if (this.rc.iceGatheringState === 'complete') {
                 iceGatheringComplete = true;
                 this.log("ICE gathering completed - final answer ready");
@@ -421,7 +580,6 @@ function Demo() {
               }
             };
 
-            
             this.rc.onicecandidate = e => {
               if (e.candidate) {
                 this.log(`ICE candidate: ${e.candidate.candidate}`);
@@ -435,32 +593,68 @@ function Demo() {
               }
             };
 
-            
             this.rc.onconnectionstatechange = () => {
-              this.log(`Connection state: ${this.rc.connectionState}`);
+              if (this.lastConnectionState !== this.rc.connectionState) {
+                this.log(`Connection state: ${this.rc.connectionState}`);
+                this.lastConnectionState = this.rc.connectionState;
+                setConnectionStatus(this.rc.connectionState);
+              }
               if (this.rc.connectionState === 'failed') {
-                this.log("Connection failed - check network connectivity");
+                this.log("Connection failed - attempting retry...");
+                this.handleConnectionFailure();
               }
             };
 
-            
             setTimeout(() => {
               if (!iceGatheringComplete) {
                 this.log("ICE gathering timeout - using answer without complete ICE");
                 resolve(this.rc.localDescription);
               }
-            }, 10000); // 10 second timeout
+            }, 10000);
             
           });
         } catch (error) {
           this.log(`Error processing offer: ${error.message}`);
+          setIsConnecting(false);
+          setConnectionStatus("failed");
           throw error;
         }
       }
     }
+    
+    handleConnectionFailure() {
+      if (this.retryCount < this.maxRetries) {
+        this.retryCount++;
+        this.log(`Retrying connection (attempt ${this.retryCount}/${this.maxRetries})...`);
+        
+        setTimeout(() => {
+          this.currentIceServerIndex = (this.currentIceServerIndex + 1) % this.iceServers.length;
+          this.rc = new RTCPeerConnection({
+            iceServers: [this.iceServers[this.currentIceServerIndex]],
+            iceCandidatePoolSize: 10
+          });
+          this.setupConnectionHandlers();
+        }, 2000);
+      } else {
+        this.log("Max retries reached. Connection failed.");
+        setIsConnecting(false);
+        setConnectionStatus("failed");
+      }
+    }
+    
+    setupConnectionHandlers() {
+      this.rc.ondatachannel = e => {
+        this.rc.dc = e.channel;
+        this.rc.dc.onopen = () => {
+          this.log("Receiver: connection open!");
+          setConnectionStatus("connected");
+          setIsConnecting(false);
+        };
+      };
+    }
     // wahi open data channel wali baat wapis L
     sendFile(file) {
-      const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
+      const chunkSize = 16384;
       const reader = new FileReader();
       const dc = this.rc.dc;
       const log = this.log;
@@ -472,6 +666,10 @@ function Demo() {
 
       reader.onload = async (event) => {
         const buffer = event.target.result;
+        const fileId = file.name + Date.now();
+        const startTime = Date.now();
+        let bytesSent = 0;
+        
         log(`Sending file: ${file.name} (${buffer.byteLength} bytes)`);
 
         dc.send(JSON.stringify({
@@ -481,10 +679,46 @@ function Demo() {
           mime: file.type || "application/octet-stream"
         }));
 
-        for (let offset = 0; offset < buffer.byteLength; offset += chunkSize) {
-          const chunk = buffer.slice(offset, offset + chunkSize);
+        const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
+        this.chunks = new Array(totalChunks);
+
+        setTransferProgress(prev => ({
+          ...prev,
+          [fileId]: { current: 0, total: totalChunks, fileName: file.name }
+        }));
+
+        for (let i = 0; i < totalChunks; i++) {
+          const chunk = buffer.slice(i * chunkSize, (i + 1) * chunkSize);
+          this.chunks[i] = chunk;
+          const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+          dc.send(
+            JSON.stringify({
+              type: "file-chunk-meta",
+              index: i,
+              hash: hashHex,
+            })
+          );
+
           dc.send(chunk);
-          await new Promise(r => setTimeout(r, 10)); 
+          bytesSent += chunk.byteLength;
+          
+          const elapsed = (Date.now() - startTime) / 1000;
+          const speed = bytesSent / elapsed;
+          
+          setTransferProgress(prev => ({
+            ...prev,
+            [fileId]: { current: i + 1, total: totalChunks, fileName: file.name }
+          }));
+          
+          setTransferSpeed(prev => ({
+            ...prev,
+            [fileId]: { speed: speed, bytesSent: bytesSent, totalBytes: buffer.byteLength }
+          }));
+
+          await new Promise(r => setTimeout(r, 10));
         }
 
         dc.send(JSON.stringify({ type: "file-end", name: file.name }));
@@ -492,9 +726,18 @@ function Demo() {
         setSentFilesxyz(prev => [...prev, file.file]);
         setTimeout(() => {
           setSendFiles(prev => prev.filter(f => f.name !== file.name));
+          setTransferProgress(prev => {
+            const newProgress = { ...prev };
+            delete newProgress[fileId];
+            return newProgress;
+          });
+          setTransferSpeed(prev => {
+            const newSpeed = { ...prev };
+            delete newSpeed[fileId];
+            return newSpeed;
+          });
         }, 500);
       };
-      
 
       reader.readAsArrayBuffer(file.file);
     }
@@ -518,6 +761,13 @@ function Demo() {
   const handlecopy = async (text) => {
     console.log("copying...")
     try {
+      // Ensure the document is focused before attempting to copy
+      if (document.hasFocus && !document.hasFocus()) {
+        window.focus();
+        // Wait a bit for focus to be established
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
       await navigator.clipboard.writeText(text);
       console.log('Text copied to clipboard: ' + text);
       return true;
@@ -546,7 +796,11 @@ function Demo() {
   const [connectionstate, setconnectionstate] = useState("disconnected");
   const [usertype, setusertype] = useState(null);
   const [step, setstep] = useState(0);
-  const [senderOffer, setSenderOffer] = useState(null); // zaruri hai stoprage ke for global scope
+  const [senderOffer, setSenderOffer] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState("disconnected");
+  const [transferProgress, setTransferProgress] = useState({});
+  const [transferSpeed, setTransferSpeed] = useState({});
+  const [isConnecting, setIsConnecting] = useState(false); // zaruri hai stoprage ke for global scope
   const log = (msg) => {
     const container = document.getElementById('dbugconsole');
     const para = document.createElement('p');
@@ -876,6 +1130,34 @@ function Demo() {
         }}> Send Files </button>
         
       </div>
+      
+      {Object.keys(transferProgress).length > 0 && (
+        <div style={{marginTop: '20px', padding: '15px', backgroundColor: '#f0f8ff', borderRadius: '8px'}}>
+          <h4 style={{margin: '0 0 10px 0'}}>Transfer Progress</h4>
+          {Object.entries(transferProgress).map(([fileId, progress]) => (
+            <div key={fileId} style={{marginBottom: '10px'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '5px'}}>
+                <span style={{fontSize: '14px', fontWeight: 'bold'}}>{progress.fileName}</span>
+                <span style={{fontSize: '12px'}}>{progress.current}/{progress.total} chunks</span>
+              </div>
+              <div style={{width: '100%', height: '8px', backgroundColor: '#e0e0e0', borderRadius: '4px', overflow: 'hidden'}}>
+                <div style={{
+                  width: `${(progress.current / progress.total) * 100}%`,
+                  height: '100%',
+                  backgroundColor: '#4CAF50',
+                  transition: 'width 0.3s ease'
+                }}></div>
+              </div>
+              {transferSpeed[fileId] && (
+                <div style={{fontSize: '12px', color: '#666', marginTop: '5px'}}>
+                  Speed: {(transferSpeed[fileId].speed / 1024 / 1024).toFixed(2)} MB/s | 
+                  Progress: {((transferSpeed[fileId].bytesSent / transferSpeed[fileId].totalBytes) * 100).toFixed(1)}%
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       <br/>
       <p style={{fontWeight: 'bold', minWidth: '100px'}}>Sent : </p>
       <div className="filebufferarray" id="sentfiles">
@@ -941,6 +1223,24 @@ function Demo() {
             { usertype === "receiver" ? <Button text = "Receiving" onClick={() => {setusertype("receiver"); setstep(0); setweaveclass(new weaveReceiver(log))}}/> : null }
 
           </span>
+          
+          {usertype && (
+            <div style={{marginTop: '20px', padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '8px', maxWidth: '720px'}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                <div style={{
+                  width: '12px', 
+                  height: '12px', 
+                  borderRadius: '50%', 
+                  backgroundColor: connectionStatus === 'connected' ? '#4CAF50' : 
+                                 connectionStatus === 'connecting' ? '#FF9800' : 
+                                 connectionStatus === 'failed' ? '#F44336' : '#9E9E9E'
+                }}></div>
+                <span>Connection: {connectionStatus}</span>
+                {isConnecting && <span style={{fontSize: '12px'}}>↺ Connecting...</span>}
+              </div>
+            </div>
+          )}
+          
           <br/>
           <br/>
           { usertype === "sender" ? senderSection : null}
