@@ -1432,7 +1432,7 @@ function Demo() {
                         setShowManualCopy(false);
                         setGeneratedText("");
                         weaveclass?.log("manual text generated");
-                        setstep(2); // yaar mai nhi check kar raha baar baar aab steps i m tired
+                        { usertype === "receiver" ? setstep(2) : null}; // yaar mai nhi check kar raha baar baar aab steps i m tired
                       });
                     }}
                     style={{
@@ -1451,7 +1451,7 @@ function Demo() {
                       setShowManualCopy(false);
                       setGeneratedText("");
                       weaveclass?.log("manual copy closed");
-                      setstep(2); // yaar mai nhi check kar raha baar baar aab steps i m tired
+                      { usertype === "receiver" ? setstep(2) : null}; // yaar mai nhi check kar raha baar baar aab steps i m tired
                     }}
                     style={{
                       padding: '10px 20px',
