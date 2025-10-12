@@ -1408,6 +1408,7 @@ function Demo() {
                       navigator.clipboard.writeText(generatedText).then(() => {
                         setShowManualCopy(false);
                         setGeneratedText("");
+                        weaveclass.log("manual text generated");
                         setstep(2); // yaar mai nhi check kar raha baar baar aab steps i m tired
                       });
                     }}
@@ -1426,6 +1427,7 @@ function Demo() {
                     onClick={() => {
                       setShowManualCopy(false);
                       setGeneratedText("");
+                      weaveclass.log("manual copy closed");
                       setstep(2); // yaar mai nhi check kar raha baar baar aab steps i m tired
                     }}
                     style={{
