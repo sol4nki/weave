@@ -940,14 +940,14 @@ function Demo() {
           type="text"
           value={messageToSend}
           onChange={(e) => setMessageToSend(e.target.value)}
-          placeholder={connectionstate === "connected" ? "Type your debug message" : "Not connected yet wait for connection to establish"}
+          placeholder={connectionStatus === "connected" ? "Type your debug message" : "Not connected yet wait for connection to establish"}
           style={{ padding: "10px", width: "100%", marginBottom: "10px" }}
-          disabled={connectionstate !== "connected"}
+          disabled={connectionStatus !== "connected"}
         
         />
         <div className="buttonsK">
           <Button text="Send Message" onClick={() => {
-            if (weaveclass && connectionstate === "connected") {
+            if (weaveclass && connectionStatus === "connected") {
               weaveclass.senddata(messageToSend);
               setMessageToSend("");
             } else {
@@ -1556,7 +1556,7 @@ function Demo() {
           <h6>UPLOAD FILES</h6>    
           <p className='welcomecont'>Scrolldown for sending msgs section/debug section</p>      
 
-          { connectionstate === "connected" ? filesection : completeconnectionfirst }
+          { connectionStatus === "connected" ? filesection : completeconnectionfirst }
           {/* {filesection} */}
         </section>
 
