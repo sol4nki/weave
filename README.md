@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://sol4nki.github.io" target="_blank">
-    <img src="./public/weave.png" alt="weave_" width="50%"/>
+    <img src="./public/weave.png" alt="weave_" width="20%"/>
   </a>
 </p>
 
