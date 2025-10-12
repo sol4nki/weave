@@ -202,6 +202,7 @@ p {
 
 @media (min-width: 1600px) {
   .welcomecont {
+    /* background-color: red; */
     max-width: 960px;
   }
 
@@ -215,6 +216,11 @@ p {
 }
 
 @media (max-width: 900px) {
+
+  section{
+    /* background-color: red; */
+    padding: 3rem 2rem;
+  }
 
   h1 {
     font-size: 3.5rem;
