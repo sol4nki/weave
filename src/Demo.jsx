@@ -155,7 +155,21 @@ function Demo() {
 
             if (hashHex === meta.hash) {
               this.receivedBuffers[meta.index] = chunk;
-              this.log(`Received chunk ${meta.index} OK size=${chunk.byteLength}`);
+              const got = this.receivedBuffers.filter(Boolean).length;
+              const total = this.incomingFile?.totalChunks || Math.ceil((this.incomingFile?.size || 0) / this.chunkSize);
+              this.log(`Received chunk ${meta.index} OK size=${chunk.byteLength} (${got}/${total})`);
+              // If we've received all chunks, finalize immediately (file-end may be lost)
+              if (got === total) {
+                const normalized = this.receivedBuffers.map(b => b instanceof ArrayBuffer ? new Uint8Array(b) : b instanceof Uint8Array ? b : b || new Uint8Array());
+                const blob = new Blob(normalized, { type: this.incomingFile?.mime || 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                this.log(`File received (all chunks present): ${this.incomingFile.name}`);
+                const fileData = { ...this.incomingFile, blobUrl: url, size: blob.size };
+                setReceivedFiles((prev) => [...prev, fileData]);
+                this.receivedBuffers = [];
+                this.incomingFile = null;
+                return;
+              }
             } else {
               this.log(`Chunk ${meta.index} failed hash check (expected ${meta.hash} got ${hashHex}), requesting retransmit`);
               this.dc.send(
@@ -602,7 +616,20 @@ function Demo() {
 
               if (hashHex === meta.hash) {
                 this.receivedBuffers[meta.index] = chunk;
-                this.log(`Receiver: received chunk ${meta.index} OK size=${chunk.byteLength}`);
+                const got = this.receivedBuffers.filter(Boolean).length;
+                const total = this.incomingFile?.totalChunks || Math.ceil((this.incomingFile?.size || 0) / this.chunkSize);
+                this.log(`Receiver: received chunk ${meta.index} OK size=${chunk.byteLength} (${got}/${total})`);
+                if (got === total) {
+                  const normalized = this.receivedBuffers.map(b => b instanceof ArrayBuffer ? new Uint8Array(b) : b instanceof Uint8Array ? b : b || new Uint8Array());
+                  const blob = new Blob(normalized, { type: this.incomingFile?.mime || 'application/octet-stream' });
+                  const url = URL.createObjectURL(blob);
+                  this.log(`Receiver: File received (all chunks present): ${this.incomingFile.name}`);
+                  const fileData = { ...this.incomingFile, blobUrl: url, size: blob.size };
+                  setReceivedFiles((prev) => [...prev, fileData]);
+                  this.receivedBuffers = [];
+                  this.incomingFile = null;
+                  return;
+                }
               } else {
                 this.log(`Receiver: chunk ${meta.index} failed hash check (expected ${meta.hash} got ${hashHex}), requesting retransmit`);
                 this.rc.dc.send(
