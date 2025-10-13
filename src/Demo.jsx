@@ -11,6 +11,9 @@ import Notif from './components/Notif'
 
 function Demo() {
 
+  // Global chunk size used for file transfers
+  const CHUNK_SIZE = 16384; // 16 KB
+
   // sab kuch yahan hi dal raha cause no way i m working with global vars and states
   class weaveSender {
     constructor(log) {
@@ -61,8 +64,11 @@ function Demo() {
       this.dc = this.lc.createDataChannel("channel");
       // Ensure binary frames arrive as ArrayBuffer (some browsers use Blob by default)
       try { this.dc.binaryType = 'arraybuffer'; } catch (e) { /* ignore if not supported */ }
-      this.chunks = [];
-      this.receivedBuffers = [];
+  this.chunks = [];
+  this.receivedBuffers = [];
+  this.chunkSize = CHUNK_SIZE;
+  this.fileRetransmitAttempts = {}; // track retransmit attempts per file name
+  this.pendingMetas = []; // queue for incoming chunk metadata
       
       // Track states to prevent log spam
       this.lastIceGatheringState = null;
@@ -78,15 +84,43 @@ function Demo() {
               const chunk = this.chunks[msg.index];
               if (chunk) this.dc.send(chunk);
             } else if (msg.type === "file-meta") {
-              this.incomingFile = { name: msg.name, size: parseInt(msg.size), mime: msg.mime };
+              const size = parseInt(msg.size);
+              const totalChunks = Math.ceil(size / this.chunkSize);
+              this.incomingFile = { name: msg.name, size: size, mime: msg.mime, totalChunks };
               this.receivedBuffers = [];
               this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
               console.log("File metadata received:", this.incomingFile);
             } else if (msg.type === "file-chunk-meta") {
-              this.pendingMeta = msg;
+              // push meta into a queue — multiple metas can arrive before binary frames
+              this.pendingMetas.push(msg);
             } else if (msg.type === "file-end") {
+              // ensure totalChunks is available (might have been set on file-meta)
+              // ... rest of file-end handling follows
+              // On file-end, verify we received all expected chunks.
+              const totalChunks = this.incomingFile?.totalChunks || Math.ceil((this.incomingFile?.size || 0) / this.chunkSize);
+              const missing = [];
+              for (let i = 0; i < totalChunks; i++) {
+                if (!this.receivedBuffers[i]) missing.push(i);
+              }
+
+              if (missing.length > 0) {
+                // Request retransmit for missing chunks (limited attempts)
+                const attemptsKey = this.incomingFile.name;
+                this.fileRetransmitAttempts[attemptsKey] = (this.fileRetransmitAttempts[attemptsKey] || 0) + 1;
+                if (this.fileRetransmitAttempts[attemptsKey] <= 3) {
+                  this.log(`Missing ${missing.length} chunks for ${this.incomingFile.name}, requesting retransmit (attempt ${this.fileRetransmitAttempts[attemptsKey]})`);
+                  for (const idx of missing) {
+                    this.dc.send(JSON.stringify({ type: 'retransmit-request', index: idx }));
+                  }
+                  // wait for retransmits to arrive; do not finalize yet
+                  return;
+                } else {
+                  this.log(`Max retransmit attempts reached for ${this.incomingFile.name}. Finalizing with missing chunks.`);
+                }
+              }
+
               // Ensure all stored buffers are ArrayBuffer or Uint8Array before creating Blob
-              const normalized = this.receivedBuffers.map(b => b instanceof ArrayBuffer ? new Uint8Array(b) : b instanceof Uint8Array ? b : b);
+              const normalized = this.receivedBuffers.map(b => b instanceof ArrayBuffer ? new Uint8Array(b) : b instanceof Uint8Array ? b : b || new Uint8Array());
               const blob = new Blob(normalized, { type: this.incomingFile?.mime || 'application/octet-stream' });
               const url = URL.createObjectURL(blob);
               this.log(`File received: ${this.incomingFile.name}`);
@@ -114,22 +148,22 @@ function Demo() {
             }
           }
 
-          if (this.pendingMeta) {
+          if (this.pendingMetas.length > 0) {
+            const meta = this.pendingMetas.shift();
             const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 
-            if (hashHex === this.pendingMeta.hash) {
-              this.receivedBuffers[this.pendingMeta.index] = chunk;
-              this.pendingMeta = null;
+            if (hashHex === meta.hash) {
+              this.receivedBuffers[meta.index] = chunk;
             } else {
               this.dc.send(
                 JSON.stringify({
                   type: "retransmit-request",
-                  index: this.pendingMeta.index,
+                  index: meta.index,
                 })
               );
-              console.warn("Chunk", this.pendingMeta.index, "failed hash check");
+              console.warn("Chunk", meta.index, "failed hash check");
             }
           } else {
             // No meta provided for this chunk; store raw
@@ -138,8 +172,8 @@ function Demo() {
         }
       };
 
-      this.dc.onopen = (e) => {
-        this.log("Sender: connection open " + e.data);
+      this.dc.onopen = () => {
+        this.log("Sender: connection open");
         setConnectionStatus("connected");
         setIsConnecting(false);
       };
@@ -185,9 +219,9 @@ function Demo() {
         };
 
         this.lc.onicecandidate = (e) => {
-          if (e.candidate) {
-            this.log(`ICE candidate: ${e.candidate.candidate}`);
-          } else {
+            if (e.candidate) {
+              this.log(`ICE candidate: ${e.candidate.candidate}`);
+            } else {
             this.log("ICE candidate gathering finished");
             if (!iceGatheringComplete && offerCreated) {
               iceGatheringComplete = true;
@@ -198,7 +232,7 @@ function Demo() {
           }
         };
 
-        this.lc.onconnectionstatechange = () => {
+  this.lc.onconnectionstatechange = () => {
           if (this.lastConnectionState !== this.lc.connectionState) {
             this.log(`Connection state: ${this.lc.connectionState}`);
             this.lastConnectionState = this.lc.connectionState;
@@ -210,27 +244,29 @@ function Demo() {
           }
         };
 
-        try {
-          const offer = await this.lc.createOffer();
-          await this.lc.setLocalDescription(offer);
-          offerCreated = true;
-          this.log("Offer created, gathering ICE candidates...");
-          
-          setTimeout(() => {
-            if (!iceGatheringComplete) {
-              this.log("ICE gathering timeout - using offer without complete ICE");
-              setIsGenerating(false);
-              resolve(JSON.stringify(this.lc.localDescription));
-            }
-          }, 10000);
-          
-        } catch (error) {
-          this.log(`Error creating offer: ${error.message}`);
-          setIsGenerating(false);
-          setIsConnecting(false);
-          setConnectionStatus("failed");
-          reject(error);
-        }
+        // create offer outside of the promise executor's async to satisfy lint rules
+        (async () => {
+          try {
+            const offer = await this.lc.createOffer();
+            await this.lc.setLocalDescription(offer);
+            offerCreated = true;
+            this.log("Offer created, gathering ICE candidates...");
+            
+            setTimeout(() => {
+              if (!iceGatheringComplete) {
+                this.log("ICE gathering timeout - using offer without complete ICE");
+                setIsGenerating(false);
+                resolve(JSON.stringify(this.lc.localDescription));
+              }
+            }, 10000);
+          } catch (error) {
+            this.log(`Error creating offer: ${error.message}`);
+            setIsGenerating(false);
+            setIsConnecting(false);
+            setConnectionStatus("failed");
+            reject(error);
+          }
+        })();
       });
     }
     
@@ -327,7 +363,7 @@ function Demo() {
 
     sendFile(file) {
       return new Promise((resolve, reject) => {
-        const chunkSize = 16384; // 16 KB chunks (socha hai user can select chunk size but figure out if inc chunk size is better or file corrupt ho sakti hai)
+        const chunkSize = this.chunkSize || CHUNK_SIZE; // use global CHUNK_SIZE
         const reader = new FileReader();
         const dc = this.dc;
         const log = this.log;
@@ -483,7 +519,9 @@ function Demo() {
       this.receivedBuffers = [];
       this.fileQueue = []; // Queue for handling multiple files
       this.chunks = [];
-      this.pendingMeta = null;
+  this.pendingMetas = [];
+  this.chunkSize = CHUNK_SIZE;
+  this.fileRetransmitAttempts = {};
 
       // receive wala logic (function ki zarurat nhi cause obviously open data channel pe aa raha hai toh process hojayega khud hi)
       this.rc.ondatachannel = e => {
@@ -498,14 +536,38 @@ function Demo() {
                 const chunk = this.chunks[msg.index];
                 if (chunk) this.rc.dc.send(chunk);
               } else if (msg.type === "file-meta") {
-                this.incomingFile = { name: msg.name, size: parseInt(msg.size), mime: msg.mime };
+                const size = parseInt(msg.size);
+                const totalChunks = Math.ceil(size / this.chunkSize);
+                this.incomingFile = { name: msg.name, size: size, mime: msg.mime, totalChunks };
                 this.receivedBuffers = [];
                 this.log(`Receiving file: ${msg.name} (${msg.size} bytes)`);
                 console.log("File metadata received:", this.incomingFile);
               } else if (msg.type === "file-chunk-meta") {
-                this.pendingMeta = msg;
+                // queue meta messages — file chunk data may arrive asynchronously
+                this.pendingMetas.push(msg);
               } else if (msg.type === "file-end") {
-                const normalized = this.receivedBuffers.map(b => b instanceof ArrayBuffer ? new Uint8Array(b) : b instanceof Uint8Array ? b : b);
+                // On file-end, check for missing chunks and request retransmits
+                const totalChunks = this.incomingFile?.totalChunks || Math.ceil((this.incomingFile?.size || 0) / this.chunkSize);
+                const missing = [];
+                for (let i = 0; i < totalChunks; i++) {
+                  if (!this.receivedBuffers[i]) missing.push(i);
+                }
+
+                if (missing.length > 0) {
+                  const attemptsKey = this.incomingFile.name;
+                  this.fileRetransmitAttempts[attemptsKey] = (this.fileRetransmitAttempts[attemptsKey] || 0) + 1;
+                  if (this.fileRetransmitAttempts[attemptsKey] <= 3) {
+                    this.log(`Missing ${missing.length} chunks for ${this.incomingFile.name}, requesting retransmit (attempt ${this.fileRetransmitAttempts[attemptsKey]})`);
+                    for (const idx of missing) {
+                      this.rc.dc.send(JSON.stringify({ type: 'retransmit-request', index: idx }));
+                    }
+                    return;
+                  } else {
+                    this.log(`Max retransmit attempts reached for ${this.incomingFile.name}. Finalizing with missing chunks.`);
+                  }
+                }
+
+                const normalized = this.receivedBuffers.map(b => b instanceof ArrayBuffer ? new Uint8Array(b) : b instanceof Uint8Array ? b : b || new Uint8Array());
                 const blob = new Blob(normalized, { type: this.incomingFile?.mime || 'application/octet-stream' });
                 const url = URL.createObjectURL(blob);
                 this.log(`File received: ${this.incomingFile.name}`);
@@ -531,22 +593,22 @@ function Demo() {
               try { chunk = await chunk.arrayBuffer(); } catch (e) { console.warn('Failed to convert Blob to ArrayBuffer:', e); }
             }
 
-            if (this.pendingMeta) {
+            if (this.pendingMetas.length > 0) {
+              const meta = this.pendingMetas.shift();
               const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
               const hashArray = Array.from(new Uint8Array(hashBuffer));
               const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 
-              if (hashHex === this.pendingMeta.hash) {
-                this.receivedBuffers[this.pendingMeta.index] = chunk;
-                this.pendingMeta = null;
+              if (hashHex === meta.hash) {
+                this.receivedBuffers[meta.index] = chunk;
               } else {
                 this.rc.dc.send(
                   JSON.stringify({
                     type: "retransmit-request",
-                    index: this.pendingMeta.index,
+                    index: meta.index,
                   })
                 );
-                console.warn("Chunk", this.pendingMeta.index, "failed hash check");
+                console.warn("Chunk", meta.index, "failed hash check");
               }
             } else {
               this.receivedBuffers.push(chunk);
@@ -682,7 +744,7 @@ function Demo() {
     // wahi open data channel wali baat wapis L
     sendFile(file) {
       return new Promise((resolve, reject) => {
-        const chunkSize = 16384;
+        const chunkSize = this.chunkSize || CHUNK_SIZE;
         const reader = new FileReader();
         const dc = this.rc.dc;
         const log = this.log;
@@ -708,7 +770,7 @@ function Demo() {
           mime: file.file.type || "application/octet-stream"
         }));
 
-        const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
+  const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
         this.chunks = new Array(totalChunks);
 
         setTransferProgress(prev => ({
@@ -1332,23 +1394,34 @@ function Demo() {
 
           </span>
           
-          {usertype && (
-            <div style={{marginTop: '20px', padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '8px', maxWidth: '720px'}}>
-              <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                <div style={{
-                  width: '12px', 
-                  height: '12px', 
-                  borderRadius: '50%', 
-                  backgroundColor: connectionStatus === 'connected' ? '#4CAF50' : 
-                                 connectionStatus === 'connecting' ? '#FF9800' : 
-                                 connectionStatus === 'failed' ? '#F44336' : '#9E9E9E'
-                }}></div>
-                <span>Connection: {connectionStatus}</span>
-                {isConnecting && <span style={{fontSize: '12px'}}>↺ Connecting...</span>}
-                {isGenerating && <span style={{fontSize: '12px'}}>⛭ Generating...</span>}
-              </div>
-            </div>
-          )}
+          {/* derive a more helpful display status for UI */}
+          {(() => {
+            // displayStatus: if connection failed but we're still generating or connecting (likely waiting for the other peer to paste), show 'awaiting-paste'
+            let displayStatus = connectionStatus;
+            if (connectionStatus === 'failed' && (isConnecting || isGenerating || (weaveclass && weaveclass.lc && weaveclass.lc.localDescription && !weaveclass.lc.remoteDescription))) {
+              displayStatus = 'awaiting-paste';
+            }
+            return (
+              usertype && (
+                <div style={{marginTop: '20px', padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '8px', maxWidth: '720px'}}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                    <div style={{
+                      width: '12px', 
+                      height: '12px', 
+                      borderRadius: '200px', 
+                      backgroundColor: displayStatus === 'connected' ? '#4CAF50' : 
+                                     displayStatus === 'connecting' ? '#FF9800' : 
+                                     displayStatus === 'awaiting-paste' ? '#FFB74D' : 
+                                     displayStatus === 'failed' ? '#F44336' : '#9E9E9E'
+                    }}></div>
+                    <span>Connection: {displayStatus === 'awaiting-paste' ? 'waiting for peer (paste link to complete)' : displayStatus}</span>
+                    {isConnecting && <span style={{fontSize: '12px'}}>↺ Connecting...</span>}
+                    {isGenerating && <span style={{fontSize: '12px'}}>⛭ Generating...</span>}
+                  </div>
+                </div>
+              )
+            );
+          })()}
           
           {isGenerating && (
             <div style={{

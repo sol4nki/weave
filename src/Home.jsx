@@ -36,7 +36,7 @@ function Home() {
           <div className="cardcontainer">
             <Card number='01' heading='Easy to use' description='Only 4 steps to establish a connection, follow the guide provided for detailed explanation.' />
             <Card number='02' heading='Fast and Secure' description='All the data stays between you and the receiver, no one else can access it.' />
-            <Card number='03' heading='Reliable' description='We use hashing on each 16Kb chunk of data that is travelling to prevent data corruption incase of connection issues.' />
+            <Card number='03' heading='Reliable' description='Each chunk can be verified, ensuring data integrity.' />
             <Card number='04' heading='No Quality Reduction' description='We ensure that all your data is sent as it is. bit to bit' />
             <Card number='05' heading='100% Peer-to-Peer' description='All data is shared directly between users without any central server.' />
             <Card number='06' heading='Lossless Transmission' description='We use hashing on each 16Kb chunk of data that is travelling to prevent data corruption incase of connection issues.' />
