@@ -81,8 +81,12 @@ function Demo() {
           try {
             const msg = JSON.parse(event.data);
             if (msg.type === "retransmit-request") {
+              this.log(`Retransmit requested for chunk ${msg.index}`);
               const chunk = this.chunks[msg.index];
-              if (chunk) this.dc.send(chunk);
+              if (chunk) {
+                this.log(`Retransmitting chunk ${msg.index}`);
+                this.dc.send(chunk);
+              }
             } else if (msg.type === "file-meta") {
               const size = parseInt(msg.size);
               const totalChunks = Math.ceil(size / this.chunkSize);
@@ -92,6 +96,7 @@ function Demo() {
               console.log("File metadata received:", this.incomingFile);
             } else if (msg.type === "file-chunk-meta") {
               // push meta into a queue — multiple metas can arrive before binary frames
+              this.log(`Received chunk meta index=${msg.index} hash=${msg.hash}`);
               this.pendingMetas.push(msg);
             } else if (msg.type === "file-end") {
               // ensure totalChunks is available (might have been set on file-meta)
@@ -104,19 +109,13 @@ function Demo() {
               }
 
               if (missing.length > 0) {
-                // Request retransmit for missing chunks (limited attempts)
-                const attemptsKey = this.incomingFile.name;
-                this.fileRetransmitAttempts[attemptsKey] = (this.fileRetransmitAttempts[attemptsKey] || 0) + 1;
-                if (this.fileRetransmitAttempts[attemptsKey] <= 3) {
-                  this.log(`Missing ${missing.length} chunks for ${this.incomingFile.name}, requesting retransmit (attempt ${this.fileRetransmitAttempts[attemptsKey]})`);
-                  for (const idx of missing) {
-                    this.dc.send(JSON.stringify({ type: 'retransmit-request', index: idx }));
-                  }
-                  // wait for retransmits to arrive; do not finalize yet
-                  return;
-                } else {
-                  this.log(`Max retransmit attempts reached for ${this.incomingFile.name}. Finalizing with missing chunks.`);
+                // Request retransmit for missing chunks — ask repeatedly until they arrive
+                this.log(`Missing chunks for ${this.incomingFile.name}: [${missing.join(', ')}]. Requesting retransmit (no limit)`);
+                for (const idx of missing) {
+                  this.dc.send(JSON.stringify({ type: 'retransmit-request', index: idx }));
                 }
+                // wait for retransmits to arrive; do not finalize yet
+                return;
               }
 
               // Ensure all stored buffers are ArrayBuffer or Uint8Array before creating Blob
@@ -156,7 +155,9 @@ function Demo() {
 
             if (hashHex === meta.hash) {
               this.receivedBuffers[meta.index] = chunk;
+              this.log(`Received chunk ${meta.index} OK size=${chunk.byteLength}`);
             } else {
+              this.log(`Chunk ${meta.index} failed hash check (expected ${meta.hash} got ${hashHex}), requesting retransmit`);
               this.dc.send(
                 JSON.stringify({
                   type: "retransmit-request",
@@ -382,16 +383,17 @@ function Demo() {
         
         log(`Sending file: ${file.name} (${buffer.byteLength} bytes)`);
 
+        const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
         dc.send(
           JSON.stringify({
             type: "file-meta",
             name: file.name,
             size: buffer.byteLength,
             mime: file.file.type || "application/octet-stream",
+            totalChunks: totalChunks,
           })
         );
-
-        const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
+        
         this.chunks = new Array(totalChunks);
 
         setTransferProgress(prev => ({
@@ -405,7 +407,8 @@ function Demo() {
           const hashBuffer = await crypto.subtle.digest("SHA-256", chunk);
           const hashArray = Array.from(new Uint8Array(hashBuffer));
           const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
+          // debug log for each chunk
+          this.log(`sendFile: chunk ${i}/${totalChunks - 1} size=${chunk.byteLength} hash=${hashHex}`);
           dc.send(
             JSON.stringify({
               type: "file-chunk-meta",
@@ -533,8 +536,12 @@ function Demo() {
             try {
               const msg = JSON.parse(event.data);
               if (msg.type === "retransmit-request") {
+                this.log(`Receiver: retransmit requested for chunk ${msg.index}`);
                 const chunk = this.chunks[msg.index];
-                if (chunk) this.rc.dc.send(chunk);
+                if (chunk) {
+                  this.log(`Receiver: retransmitting chunk ${msg.index}`);
+                  this.rc.dc.send(chunk);
+                }
               } else if (msg.type === "file-meta") {
                 const size = parseInt(msg.size);
                 const totalChunks = Math.ceil(size / this.chunkSize);
@@ -554,17 +561,11 @@ function Demo() {
                 }
 
                 if (missing.length > 0) {
-                  const attemptsKey = this.incomingFile.name;
-                  this.fileRetransmitAttempts[attemptsKey] = (this.fileRetransmitAttempts[attemptsKey] || 0) + 1;
-                  if (this.fileRetransmitAttempts[attemptsKey] <= 3) {
-                    this.log(`Missing ${missing.length} chunks for ${this.incomingFile.name}, requesting retransmit (attempt ${this.fileRetransmitAttempts[attemptsKey]})`);
-                    for (const idx of missing) {
-                      this.rc.dc.send(JSON.stringify({ type: 'retransmit-request', index: idx }));
-                    }
-                    return;
-                  } else {
-                    this.log(`Max retransmit attempts reached for ${this.incomingFile.name}. Finalizing with missing chunks.`);
+                  this.log(`Missing chunks for ${this.incomingFile.name}: [${missing.join(', ')}]. Requesting retransmit (no limit)`);
+                  for (const idx of missing) {
+                    this.rc.dc.send(JSON.stringify({ type: 'retransmit-request', index: idx }));
                   }
+                  return;
                 }
 
                 const normalized = this.receivedBuffers.map(b => b instanceof ArrayBuffer ? new Uint8Array(b) : b instanceof Uint8Array ? b : b || new Uint8Array());
@@ -601,7 +602,9 @@ function Demo() {
 
               if (hashHex === meta.hash) {
                 this.receivedBuffers[meta.index] = chunk;
+                this.log(`Receiver: received chunk ${meta.index} OK size=${chunk.byteLength}`);
               } else {
+                this.log(`Receiver: chunk ${meta.index} failed hash check (expected ${meta.hash} got ${hashHex}), requesting retransmit`);
                 this.rc.dc.send(
                   JSON.stringify({
                     type: "retransmit-request",
