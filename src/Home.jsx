@@ -19,7 +19,13 @@ function Home() {
                 <p className="sub">Connect and share. Weave handles the complexity so you can share seamlessly.</p>
                 <div className="btns">
                     <Link to="/demo" className="btn btn-primary">Get Started <span className="arrow">→</span></Link>
-                    <Buttonwhite text = "Watch Video" />
+                    <a 
+                          href="https://youtu.be/yEep-us8rA0?si=Nsm-9M6Dmp-yrITg" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                    >
+                      <Buttonwhite text = "Watch Video" />
+                    </a>
                 </div>
             </div>
             <div className="scroll-indicator">
