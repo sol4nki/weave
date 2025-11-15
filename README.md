@@ -11,7 +11,7 @@ Visit the site -> [WEAVE](https://weave-azure.vercel.app)
 
 # DEMO VIDEO (click on the image)
 
-[add video thumb + href]
+[![Watch here](/github/yeep.jpg)](https://youtu.be/yEep-us8rA0?si=Q3UkAyVxQydx6l-B)
 
 
 ## FILE STRUCTURE 
